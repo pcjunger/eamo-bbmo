@@ -1,0 +1,99 @@
+log_2025-01-12_17h27min59sec.txt
+#####################################################
+./EnDED/build/EnDED
+	Version 1
+	June 15th 2019
+	Ina Maria Deutschmann
+#####################################################
+
+Versions:
+GNU GCC/G++: 4.2.1
+boost: 1.87.0
+
+Your command was: 
+./EnDED/build/EnDED --input_network_file NW_temp.txt --methods II,DPI --II_permutation_iteration 1000 --do_pre_jointP_comp --II_DPI_abundance_file EA_ASV_table_for_EnDED.tsv --II_DPI_ENVparameter_file EA_ENV.tsv --output_network_file EA_NW_ENV_NO3.tsv --output_triplet_info EA_Triplet_ENV_NO3.tsv 
+
+
+Settings:
+
+Input Files
+	The input network filename: NW_temp.txt
+	The abundances filename: EA_ASV_table_for_EnDED.tsv
+	The ENV-parameter filename: EA_ENV.tsv
+
+Output Files
+	The output network filename: EA_NW_ENV_NO3.tsv
+	The triplet output filename: EA_Triplet_ENV_NO3.tsv
+
+Nodes
+	node X is assumed to be in column 1
+	node Y is assumed to be in column 2
+
+ID-ENV edges
+	The features names are assumed to contain the identifier: "ENV"
+	The extended network file (output) will contain ID-ENV edges.
+
+Separators
+	The separator in the network file is assumed to be "tab"
+	The separator in the abundance file is assumed to be "tab"
+
+
+selected Method(s)
+	Interaction Information (II)
+	Data Processing Inequality (DPI) (minimum Mutual Information)
+not selected Method(s)
+	Sign Pattern (SP)
+	Overlap (OL)
+	Co-Occurrence (CO)
+
+Method(s) Setting(s)
+
+  Combination strategy of considering an edge indirect.
+	Threshold(in percentage) for minimum methods that suggest edge as indirect: 100.000000
+	Threshold(in percentage) for minimum triplets that suggest edge as indirect: 1.000000
+
+  Interaction Information
+	significance_level: 0.050000
+	number of permutations: 1000
+	ENV-vector will be permuted and stored before examining the networks triplets.
+	And in addition Joint Probabilities with them will be precomputed and also stored.
+
+  Data Processing Inequality
+	min mutual information(MI) threshold for MI comparison: 0.000000
+
+  Interaction Information and Data Processing Inequality
+	Threshold(in percentage) for maximum portion of 'nan' in vectors used for II and DPI: 20.000000
+
+
+To compute the significance of the interaction information, we are randomizing the environmental abundance table with the seed: 3483744060
+
+Reading in EA_ASV_table_for_EnDED.tsv
+
+Reading in EA_ENV.tsv
+
+Reading in NW_temp.txt to get ID-ENV edges
+
+Reading in NW_temp.txt for indirect edge detection
+
+Trackers:
+1 ENVs are connected to at least one ID parameter.
+2099 of 2099 ID-ENV edges are considered.
+2099 ID-ENV edges are within at least one triplet.
+0 ENV-ENV edges.
+2435 ID-ID edges.
+0 ID-ID edges that are not in a triplet.
+2099 IDs are connected to at least one ENV parameter.
+2435 ID-ID edges that are in at least one triplet.
+ Determination of indirect edges:
+ Interaction Information: 123 indirect, 2312 not indirect
+ Data Processing Inequality: 32 indirect, 2403 not indirect
+ Method combination: 2 indirect, 2433 not indirect
+
+Done!
+
+Computing time:
+Start: 2025-01-12_17h27min59sec
+End:   2025-01-12_17h28min08sec
+
+in sec:          9
+in hour:min:sec: 0:0:9

@@ -1,0 +1,62 @@
+Source_sorted	Target_sorted	Weight
+Actinobacteriota	Actinobacteriota	1
+Actinobacteriota	Alphaproteobacteria	3
+Actinobacteriota	Bacteroidota	5
+Actinobacteriota	Cyanobacteria	2
+Actinobacteriota	Gammaproteobacteria	4
+Actinobacteriota	Marinimicrobia (SAR406 clade)	1
+Alphaproteobacteria	Alphaproteobacteria	13
+Alphaproteobacteria	Bacteroidota	20
+Alphaproteobacteria	Cercozoa	1
+Alphaproteobacteria	Ciliophora	2
+Alphaproteobacteria	Cyanobacteria	4
+Alphaproteobacteria	Dinoflagellata	6
+Alphaproteobacteria	Gammaproteobacteria	9
+Alphaproteobacteria	Marinimicrobia (SAR406 clade)	3
+Alphaproteobacteria	Pseudofungi	1
+Alphaproteobacteria	Telonemia	1
+Bacteroidota	Bacteroidota	35
+Bacteroidota	Chlorophyta	2
+Bacteroidota	Cyanobacteria	5
+Bacteroidota	Dinoflagellata	10
+Bacteroidota	Gammaproteobacteria	11
+Bacteroidota	Marinimicrobia (SAR406 clade)	5
+Bacteroidota	Ochrophyta	3
+Bacteroidota	Planctomycetota	2
+Bacteroidota	SAR324 clade(Marine group B)	1
+Bacteroidota	Thermoplasmatota	1
+Bacteroidota	Verrucomicrobiota	4
+Cercozoa	Ciliophora	1
+Chlorophyta	Cryptophyta	1
+Chlorophyta	Ochrophyta	1
+Choanoflagellida	Dinoflagellata	1
+Choanoflagellida	Haptophyta	1
+Ciliophora	Ciliophora	4
+Ciliophora	Cryptophyta	1
+Ciliophora	Dinoflagellata	10
+Ciliophora	Ochrophyta	1
+Ciliophora	Sagenista	1
+Cryptophyta	Dinoflagellata	1
+Cryptophyta	Planctomycetota	1
+Cryptophyta	Telonemia	1
+Cyanobacteria	Cyanobacteria	12
+Cyanobacteria	Dinoflagellata	1
+Cyanobacteria	Gammaproteobacteria	3
+Cyanobacteria	Ochrophyta	1
+Cyanobacteria	Verrucomicrobiota	1
+Dinoflagellata	Dinoflagellata	26
+Dinoflagellata	Gammaproteobacteria	2
+Dinoflagellata	Haptophyta	3
+Dinoflagellata	Marinimicrobia (SAR406 clade)	1
+Dinoflagellata	Ochrophyta	7
+Dinoflagellata	Planctomycetota	2
+Dinoflagellata	Pseudofungi	2
+Dinoflagellata	Radiolaria	3
+Dinoflagellata	SAR324 clade(Marine group B)	1
+Dinoflagellata	Sagenista	1
+Dinoflagellata	Telonemia	1
+Dinoflagellata	Verrucomicrobiota	2
+Gammaproteobacteria	Gammaproteobacteria	3
+Gammaproteobacteria	Verrucomicrobiota	1
+Marinimicrobia (SAR406 clade)	Marinimicrobia (SAR406 clade)	1
+Planctomycetota	Planctomycetota	2

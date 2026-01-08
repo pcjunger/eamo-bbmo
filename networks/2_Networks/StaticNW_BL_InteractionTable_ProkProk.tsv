@@ -1,0 +1,96 @@
+Source_sorted	Target_sorted	Weight
+Acidobacteriota	Alphaproteobacteria	2
+Acidobacteriota	Bacteroidota	1
+Actinobacteriota	Actinobacteriota	7
+Actinobacteriota	Alphaproteobacteria	10
+Actinobacteriota	Bacteroidota	15
+Actinobacteriota	Bdellovibrionota	1
+Actinobacteriota	Cyanobacteria	2
+Actinobacteriota	Gammaproteobacteria	12
+Actinobacteriota	Marinimicrobia (SAR406 clade)	1
+Actinobacteriota	NB1-j	1
+Actinobacteriota	Planctomycetota	2
+Actinobacteriota	Verrucomicrobiota	2
+Actinobacteriota	WPS-2	1
+Alphaproteobacteria	Alphaproteobacteria	123
+Alphaproteobacteria	Bacteroidota	133
+Alphaproteobacteria	Chloroflexi	11
+Alphaproteobacteria	Cyanobacteria	16
+Alphaproteobacteria	Dadabacteria	2
+Alphaproteobacteria	Desulfobacterota	1
+Alphaproteobacteria	Firmicutes	4
+Alphaproteobacteria	Gammaproteobacteria	77
+Alphaproteobacteria	Gemmatimonadota	1
+Alphaproteobacteria	Marinimicrobia (SAR406 clade)	17
+Alphaproteobacteria	Myxococcota	1
+Alphaproteobacteria	NB1-j	2
+Alphaproteobacteria	Nitrospinota	4
+Alphaproteobacteria	Planctomycetota	16
+Alphaproteobacteria	SAR324 clade(Marine group B)	3
+Alphaproteobacteria	Verrucomicrobiota	8
+Alphaproteobacteria	WPS-2	1
+Bacteroidota	Bacteroidota	149
+Bacteroidota	Chloroflexi	3
+Bacteroidota	Cyanobacteria	14
+Bacteroidota	Dadabacteria	1
+Bacteroidota	Desulfobacterota	1
+Bacteroidota	Firmicutes	2
+Bacteroidota	Gammaproteobacteria	76
+Bacteroidota	Gemmatimonadota	2
+Bacteroidota	Marinimicrobia (SAR406 clade)	19
+Bacteroidota	Myxococcota	5
+Bacteroidota	NB1-j	2
+Bacteroidota	PAUC34f	1
+Bacteroidota	Planctomycetota	18
+Bacteroidota	SAR324 clade(Marine group B)	2
+Bacteroidota	Verrucomicrobiota	17
+Bdellovibrionota	Gammaproteobacteria	1
+Bdellovibrionota	Marinimicrobia (SAR406 clade)	1
+Chloroflexi	Chloroflexi	2
+Chloroflexi	Dadabacteria	1
+Chloroflexi	Gammaproteobacteria	5
+Chloroflexi	Gemmatimonadota	2
+Chloroflexi	Marinimicrobia (SAR406 clade)	5
+Chloroflexi	Nitrospinota	1
+Chloroflexi	PAUC34f	1
+Chloroflexi	SAR324 clade(Marine group B)	1
+Chloroflexi	Verrucomicrobiota	2
+Cyanobacteria	Cyanobacteria	26
+Cyanobacteria	Gammaproteobacteria	11
+Cyanobacteria	Marinimicrobia (SAR406 clade)	2
+Cyanobacteria	Planctomycetota	2
+Cyanobacteria	Verrucomicrobiota	1
+Dadabacteria	Gammaproteobacteria	1
+Dadabacteria	Marinimicrobia (SAR406 clade)	1
+Desulfobacterota	Gammaproteobacteria	1
+Desulfobacterota	Gemmatimonadota	1
+Desulfobacterota	Marinimicrobia (SAR406 clade)	1
+Desulfobacterota	Planctomycetota	1
+Firmicutes	Firmicutes	2
+Firmicutes	Gammaproteobacteria	2
+Firmicutes	Planctomycetota	1
+Firmicutes	Verrucomicrobiota	1
+Gammaproteobacteria	Gammaproteobacteria	37
+Gammaproteobacteria	Gemmatimonadota	1
+Gammaproteobacteria	Marinimicrobia (SAR406 clade)	8
+Gammaproteobacteria	NB1-j	2
+Gammaproteobacteria	Nitrospinota	2
+Gammaproteobacteria	PAUC34f	1
+Gammaproteobacteria	Planctomycetota	11
+Gammaproteobacteria	SAR324 clade(Marine group B)	2
+Gammaproteobacteria	Verrucomicrobiota	3
+Gemmatimonadota	Nitrospinota	1
+Gemmatimonadota	Planctomycetota	1
+Marinimicrobia (SAR406 clade)	Marinimicrobia (SAR406 clade)	3
+Marinimicrobia (SAR406 clade)	Nitrospinota	1
+Marinimicrobia (SAR406 clade)	PAUC34f	1
+Marinimicrobia (SAR406 clade)	Planctomycetota	3
+Marinimicrobia (SAR406 clade)	SAR324 clade(Marine group B)	1
+Marinimicrobia (SAR406 clade)	Verrucomicrobiota	2
+Myxococcota	Verrucomicrobiota	1
+Nitrospinota	PAUC34f	1
+Nitrospinota	Planctomycetota	1
+Nitrospinota	Verrucomicrobiota	1
+Planctomycetota	Planctomycetota	10
+Planctomycetota	SAR324 clade(Marine group B)	2
+Planctomycetota	Verrucomicrobiota	4

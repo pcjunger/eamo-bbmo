@@ -1,0 +1,29 @@
+Source_sorted	Target_sorted	Weight
+Actinobacteriota	Actinobacteriota	1
+Actinobacteriota	Alphaproteobacteria	2
+Actinobacteriota	Bacteroidota	3
+Actinobacteriota	Gammaproteobacteria	1
+Actinobacteriota	Thermoplasmatota	1
+Alphaproteobacteria	Alphaproteobacteria	18
+Alphaproteobacteria	Bacteroidota	5
+Alphaproteobacteria	Cyanobacteria	6
+Alphaproteobacteria	Dinoflagellata	1
+Alphaproteobacteria	Gammaproteobacteria	4
+Alphaproteobacteria	Marinimicrobia (SAR406 clade)	1
+Alphaproteobacteria	Opalozoa	1
+Bacteroidota	Bacteroidota	4
+Bacteroidota	Chlorophyta	2
+Bacteroidota	Ciliophora	2
+Bacteroidota	Cyanobacteria	2
+Bacteroidota	Marinimicrobia (SAR406 clade)	2
+Bacteroidota	Planctomycetota	1
+Bacteroidota	Verrucomicrobiota	1
+Crenarchaeota	Gammaproteobacteria	1
+Cyanobacteria	Cyanobacteria	24
+Cyanobacteria	Dinoflagellata	1
+Cyanobacteria	Gammaproteobacteria	2
+Cyanobacteria	Verrucomicrobiota	1
+Dinoflagellata	Dinoflagellata	4
+Opalozoa	Telonemia	1
+Planctomycetota	Planctomycetota	2
+Sagenista	Telonemia	1

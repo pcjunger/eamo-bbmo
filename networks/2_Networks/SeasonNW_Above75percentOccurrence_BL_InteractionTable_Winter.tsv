@@ -1,0 +1,100 @@
+Source_sorted	Target_sorted	Weight
+Actinobacteriota	Actinobacteriota	4
+Actinobacteriota	Alphaproteobacteria	4
+Actinobacteriota	Bacteroidota	10
+Actinobacteriota	Bdellovibrionota	1
+Actinobacteriota	Cyanobacteria	2
+Actinobacteriota	Gammaproteobacteria	5
+Actinobacteriota	Marinimicrobia (SAR406 clade)	1
+Actinobacteriota	Thermoplasmatota	2
+Alphaproteobacteria	Alphaproteobacteria	34
+Alphaproteobacteria	Bacteroidota	30
+Alphaproteobacteria	Chloroflexi	4
+Alphaproteobacteria	Crenarchaeota	2
+Alphaproteobacteria	Cyanobacteria	5
+Alphaproteobacteria	Dadabacteria	2
+Alphaproteobacteria	Dinoflagellata	3
+Alphaproteobacteria	Firmicutes	1
+Alphaproteobacteria	Gammaproteobacteria	23
+Alphaproteobacteria	Gemmatimonadota	1
+Alphaproteobacteria	Marinimicrobia (SAR406 clade)	5
+Alphaproteobacteria	Nitrospinota	1
+Alphaproteobacteria	Planctomycetota	4
+Alphaproteobacteria	SAR324 clade(Marine group B)	1
+Alphaproteobacteria	Thermoplasmatota	1
+Alphaproteobacteria	Verrucomicrobiota	2
+Bacteroidota	Bacteroidota	47
+Bacteroidota	Chloroflexi	1
+Bacteroidota	Chlorophyta	1
+Bacteroidota	Crenarchaeota	2
+Bacteroidota	Cyanobacteria	4
+Bacteroidota	Dadabacteria	1
+Bacteroidota	Dinoflagellata	3
+Bacteroidota	Gammaproteobacteria	13
+Bacteroidota	Gemmatimonadota	1
+Bacteroidota	Marinimicrobia (SAR406 clade)	11
+Bacteroidota	Myxococcota	2
+Bacteroidota	Ochrophyta	1
+Bacteroidota	Planctomycetota	4
+Bacteroidota	Telonemia	1
+Bacteroidota	Thermoplasmatota	4
+Bacteroidota	Verrucomicrobiota	7
+Bdellovibrionota	Marinimicrobia (SAR406 clade)	1
+Cercozoa	Planctomycetota	1
+Cercozoa	Telonemia	1
+Chloroflexi	Chloroflexi	2
+Chloroflexi	Crenarchaeota	1
+Chloroflexi	Dadabacteria	1
+Chloroflexi	Gammaproteobacteria	1
+Chloroflexi	Gemmatimonadota	2
+Chloroflexi	Nitrospinota	1
+Chloroflexi	SAR324 clade(Marine group B)	1
+Chloroflexi	Thermoplasmatota	1
+Chlorophyta	Cryptophyta	1
+Chlorophyta	Ochrophyta	1
+Ciliophora	Cryptophyta	1
+Ciliophora	Telonemia	1
+Crenarchaeota	Crenarchaeota	1
+Crenarchaeota	Dadabacteria	1
+Crenarchaeota	Gammaproteobacteria	1
+Crenarchaeota	Planctomycetota	1
+Cryptophyta	Dinoflagellata	1
+Cryptophyta	Planctomycetota	1
+Cyanobacteria	Cyanobacteria	10
+Cyanobacteria	Dinoflagellata	1
+Cyanobacteria	Gammaproteobacteria	4
+Cyanobacteria	Ochrophyta	1
+Cyanobacteria	Planctomycetota	1
+Cyanobacteria	Verrucomicrobiota	1
+Dadabacteria	Gammaproteobacteria	1
+Dadabacteria	Marinimicrobia (SAR406 clade)	1
+Desulfobacterota	Dinoflagellata	2
+Desulfobacterota	Gemmatimonadota	1
+Desulfobacterota	Marinimicrobia (SAR406 clade)	1
+Desulfobacterota	Ochrophyta	1
+Desulfobacterota	Planctomycetota	1
+Desulfobacterota	Thermoplasmatota	1
+Dinoflagellata	Dinoflagellata	4
+Dinoflagellata	Gammaproteobacteria	1
+Dinoflagellata	Ochrophyta	3
+Dinoflagellata	SAR324 clade(Marine group B)	1
+Dinoflagellata	Telonemia	2
+Dinoflagellata	Verrucomicrobiota	1
+Gammaproteobacteria	Gammaproteobacteria	6
+Gammaproteobacteria	Gemmatimonadota	1
+Gammaproteobacteria	Marinimicrobia (SAR406 clade)	1
+Gammaproteobacteria	Planctomycetota	2
+Gammaproteobacteria	Thermoplasmatota	1
+Gammaproteobacteria	Verrucomicrobiota	1
+Gemmatimonadota	Planctomycetota	1
+Marinimicrobia (SAR406 clade)	Marinimicrobia (SAR406 clade)	1
+Marinimicrobia (SAR406 clade)	Planctomycetota	1
+Marinimicrobia (SAR406 clade)	SAR324 clade(Marine group B)	1
+Marinimicrobia (SAR406 clade)	Thermoplasmatota	5
+Ochrophyta	Planctomycetota	1
+Planctomycetota	Planctomycetota	5
+Planctomycetota	SAR324 clade(Marine group B)	1
+Planctomycetota	Thermoplasmatota	3
+SAR324 clade(Marine group B)	Thermoplasmatota	1
+Telonemia	Verrucomicrobiota	1
+Thermoplasmatota	Thermoplasmatota	5

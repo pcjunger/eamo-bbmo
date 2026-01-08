@@ -1,0 +1,76 @@
+log_2025-01-12_17h25min43sec.txt
+#####################################################
+./EnDED/build/EnDED
+	Version 1
+	June 15th 2019
+	Ina Maria Deutschmann
+#####################################################
+
+Versions:
+GNU GCC/G++: 4.2.1
+boost: 1.87.0
+
+Your command was: 
+./EnDED/build/EnDED --input_network_file BL_FlashWeave_network.tsv --methods CO --II_DPI_abundance_file BL_ASV_table_for_EnDED.tsv --output_network_file BL_NW_CoOcc.tsv 
+
+
+Settings:
+
+Input Files
+	The input network filename: BL_FlashWeave_network.tsv
+
+Output Files
+	The output network filename: BL_NW_CoOcc.tsv
+
+Nodes
+	node X is assumed to be in column 1
+	node Y is assumed to be in column 2
+
+ID-ENV edges
+	The features names are assumed to contain the identifier: "ENV"
+	The extended network file (output) will contain ID-ENV edges.
+
+Separators
+	The separator in the network file is assumed to be "tab"
+
+
+selected Method(s)
+	Co-Occurrence (CO)
+not selected Method(s)
+	Sign Pattern (SP)
+	Overlap (OL)
+	Interaction Information (II)
+	Data Processing Inequality (DPI) (minimum Mutual Information)
+
+Method(s) Setting(s)
+
+  Combination strategy of considering an edge indirect.
+	Threshold(in percentage) for minimum methods that suggest edge as indirect: 100.000000
+	Threshold(in percentage) for minimum triplets that suggest edge as indirect: 1.000000
+
+
+Reading in BL_ASV_table_for_EnDED.tsv
+
+Reading in BL_FlashWeave_network.tsv to get ID-ENV edges
+
+Reading in BL_FlashWeave_network.tsv for indirect edge detection
+
+Trackers:
+0 ENVs are connected to at least one ID parameter.
+0 of 0 ID-ENV edges are considered.
+0 ID-ENV edges are within at least one triplet.
+0 ENV-ENV edges.
+2660 ID-ID edges.
+2660 ID-ID edges that are not in a triplet.
+0 IDs are connected to at least one ENV parameter.
+0 ID-ID edges that are in at least one triplet.
+ Determination of indirect edges:
+
+Done!
+
+Computing time:
+Start: 2025-01-12_17h25min43sec
+End:   2025-01-12_17h25min43sec
+
+in sec:          0
+in hour:min:sec: 0:0:0

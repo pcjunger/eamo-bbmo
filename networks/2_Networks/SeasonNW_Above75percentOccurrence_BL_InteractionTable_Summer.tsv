@@ -1,0 +1,23 @@
+Source_sorted	Target_sorted	Weight
+Actinobacteriota	Alphaproteobacteria	1
+Actinobacteriota	Gammaproteobacteria	1
+Alphaproteobacteria	Alphaproteobacteria	11
+Alphaproteobacteria	Bacteroidota	9
+Alphaproteobacteria	Gammaproteobacteria	6
+Alphaproteobacteria	Opalozoa	1
+Alphaproteobacteria	Pseudofungi	1
+Bacteroidota	Bacteroidota	8
+Bacteroidota	Cyanobacteria	2
+Bacteroidota	Dinoflagellata	1
+Bacteroidota	Gammaproteobacteria	3
+Bacteroidota	Radiolaria	1
+Bacteroidota	SAR324 clade(Marine group B)	1
+Cercozoa	Sagenista	1
+Chlorophyta	Dinoflagellata	1
+Cyanobacteria	Cyanobacteria	9
+Cyanobacteria	Gammaproteobacteria	1
+Dinoflagellata	Dinoflagellata	3
+Dinoflagellata	Ochrophyta	2
+Dinoflagellata	SAR324 clade(Marine group B)	1
+Dinoflagellata	Sagenista	1
+Gammaproteobacteria	Gammaproteobacteria	5
