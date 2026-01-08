@@ -1,0 +1,654 @@
+---
+title: "TaxonomyOfInteractions_Seasons"
+author: "Ina Maria Deutschmann"
+date: "06/02/2025"
+output: html_document
+---
+
+# Taxonomy of interactions (Static Network)
+## Set Up
+Path and filenames
+```{r}
+PATH <- "~/Documents/Ina/Pedro/"
+
+file_temporal_NW_BL <- "2_Networks/BL_temporalNetwork.tsv"
+file_temporal_NW_EA <- "2_Networks/EA_temporalNetwork.tsv"
+file_ASV16S <- "1_Data/ASV_16S_seqs_tax.tsv"
+file_ASV18S <- "1_Data/ASV_18S_seqs_tax.tsv"
+file_ENV <- "0_PedroData/EnvData_EAMO_BBMO_12112024.csv"
+```
+
+Load necessary libraries
+```{r}
+library(dplyr)
+library(tidyr)
+library(circlize)
+library(RColorBrewer)
+library(ggplot2)
+library(knitr)
+library(kableExtra)
+library(flextable)
+library(officer)
+```
+
+Load data
+```{r}
+# Load Networks
+NW_BL <- read.table(paste0(PATH, file_temporal_NW_BL), header = TRUE, stringsAsFactors = FALSE)
+NW_EA <- read.table(paste0(PATH, file_temporal_NW_EA), header = TRUE, stringsAsFactors = FALSE)
+
+# Load Taxonomy Files
+TAX_16S <- read.table(paste0(PATH, file_ASV16S), header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+TAX_18S <- read.table(paste0(PATH, file_ASV18S), header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+# Set rownames for easy access
+rownames(TAX_16S) <- TAX_16S$ID
+rownames(TAX_18S) <- TAX_18S$ID
+
+# Load Environmental file
+ENV <- read.table(paste0(PATH, file_ENV), header = TRUE, sep = ",", stringsAsFactors = FALSE)
+
+# Fix Sample IDs in ENV to match column names (replace '-' with '.')
+ENV <- ENV %>%
+  mutate(SampleID_fixed = gsub("-", ".", SampleID))
+```
+
+Test for missing values BL
+```{r}
+# Extract unique IDs from your network
+network_ids <- unique(c(NW_BL$Source, NW_BL$Target))
+
+# Clean IDs (remove the 16S/18S part to match TAX IDs)
+network_ids_clean <- sub("_(16S_.*|18S_.*)", "", network_ids)
+
+# Split by 16S and 18S
+ids_16S <- network_ids_clean[grepl("16S", network_ids)]
+ids_18S <- network_ids_clean[grepl("18S", network_ids)]
+
+# Find missing IDs
+missing_16S <- ids_16S[!ids_16S %in% rownames(TAX_16S)]
+missing_18S <- ids_18S[!ids_18S %in% rownames(TAX_18S)]
+
+# Combine and Print
+missing_ids <- unique(c(missing_16S, missing_18S))
+
+# Print missing IDs
+cat("Missing IDs:\n")
+print(missing_ids)
+
+# Optional: How many missing
+cat("\nNumber of missing IDs:", length(missing_ids), "\n")
+```
+
+Test for missing values EA
+```{r}
+# Extract unique IDs from your network
+network_ids <- unique(c(NW_EA$Source, NW_EA$Target))
+
+# Clean IDs (remove the 16S/18S part to match TAX IDs)
+network_ids_clean <- sub("_(16S_.*|18S_.*)", "", network_ids)
+
+# Split by 16S and 18S
+ids_16S <- network_ids_clean[grepl("16S", network_ids)]
+ids_18S <- network_ids_clean[grepl("18S", network_ids)]
+
+# Find missing IDs
+missing_16S <- ids_16S[!ids_16S %in% rownames(TAX_16S)]
+missing_18S <- ids_18S[!ids_18S %in% rownames(TAX_18S)]
+
+# Combine and Print
+missing_ids <- unique(c(missing_16S, missing_18S))
+
+# Print missing IDs
+cat("Missing IDs:\n")
+print(missing_ids)
+
+# Optional: How many missing
+cat("\nNumber of missing IDs:", length(missing_ids), "\n")
+```
+Test for NA in Phylum (or Class for Protobacteria) or Devision
+```{r}
+# 16S: Check for NAs in Phylum or Class
+missing_phylum_16S <- TAX_16S %>%
+  filter(is.na(Phylum) | (Phylum == "Proteobacteria" & is.na(Class))) %>%
+  pull(ID)
+
+# 18S: Check for NAs in Division
+missing_division_18S <- TAX_18S %>%
+  filter(is.na(Division)) %>%
+  pull(ID)
+
+# Combine
+missing_taxonomy_ids <- unique(c(missing_phylum_16S, missing_division_18S))
+
+# Print
+cat("IDs with missing Phylum/Class/Division:\n")
+print(missing_taxonomy_ids)
+
+# How many
+cat("\nNumber of IDs with missing taxonomy:", length(missing_taxonomy_ids), "\n")
+```
+
+Annotate Network with Taxonomy
+```{r}
+# Helper Function to Extract Taxonomy (Safe version with unknown labels)
+get_division_phylum <- function(ID) {
+  if (grepl("16S", ID)) {
+    id_clean <- sub("_(16S_.*)", "", ID)
+    if (id_clean %in% rownames(TAX_16S)) {
+      tx <- TAX_16S[id_clean, ]
+      if (is.na(tx$Phylum)) {
+        division_phylum <- "unknown 16S"
+      } else if (tx$Phylum == "Proteobacteria") {
+        division_phylum <- ifelse(is.na(tx$Class), "unknown 16S", tx$Class)
+      } else {
+        division_phylum <- tx$Phylum
+      }
+      return(data.frame(Kingdom = tx$Kingdom, DivisionPhylum = division_phylum))
+    } else {
+      return(data.frame(Kingdom = NA, DivisionPhylum = "unknown 16S"))
+    }
+  } else if (grepl("18S", ID)) {
+    id_clean <- sub("_(18S_.*)", "", ID)
+    if (id_clean %in% rownames(TAX_18S)) {
+      tx <- TAX_18S[id_clean, ]
+      if (is.na(tx$Division)) {
+        division_phylum <- "unknown 18S"
+      } else {
+        division_phylum <- tx$Division
+      }
+      return(data.frame(Kingdom = tx$Kingdom, DivisionPhylum = division_phylum))
+    } else {
+      return(data.frame(Kingdom = NA, DivisionPhylum = "unknown 18S"))
+    }
+  } else {
+    return(data.frame(Kingdom = NA, DivisionPhylum = "unknown"))
+  }
+}
+
+# Annotate Network with Taxonomy
+NW_BL_annotated <- NW_BL %>%
+  mutate(Source_ID = sub("_(16S_.*|18S_.*)", "", Source),
+         Target_ID = sub("_(16S_.*|18S_.*)", "", Target)) %>%
+  rowwise() %>%
+  mutate(Source_Kingdom = get_division_phylum(Source)$Kingdom,
+         Source_DivisionPhylum = get_division_phylum(Source)$DivisionPhylum,
+         Target_Kingdom = get_division_phylum(Target)$Kingdom,
+         Target_DivisionPhylum = get_division_phylum(Target)$DivisionPhylum) %>%
+  ungroup()
+
+NW_EA_annotated <- NW_EA %>%
+  mutate(Source_ID = sub("_(16S_.*|18S_.*)", "", Source),
+         Target_ID = sub("_(16S_.*|18S_.*)", "", Target)) %>%
+  rowwise() %>%
+  mutate(Source_Kingdom = get_division_phylum(Source)$Kingdom,
+         Source_DivisionPhylum = get_division_phylum(Source)$DivisionPhylum,
+         Target_Kingdom = get_division_phylum(Target)$Kingdom,
+         Target_DivisionPhylum = get_division_phylum(Target)$DivisionPhylum) %>%
+  ungroup()
+```
+
+```{r}
+colnames(NW_BL_annotated)
+```
+```{r}
+colnames(NW_EA_annotated)
+```
+```{r}
+colnames(ENV)
+```
+
+## Map seasons
+```{r}
+# 1. Extract sample columns from NW_BL and NW_EA
+sample_cols_BL <- colnames(NW_BL)[grep("^BL\\.", colnames(NW_BL))]
+sample_cols_EA <- colnames(NW_EA)[grep("^EA\\.", colnames(NW_EA))]
+
+# 2. Combine all sample names
+all_samples_NW <- c(sample_cols_BL, sample_cols_EA)
+
+# 3. Subset ENV for those samples
+env_sub <- ENV %>%
+  filter(SampleID %in% all_samples_NW_fixed)
+
+# 4. Summarize number of samples per station and season
+season_site_summary <- env_sub %>%
+  group_by(station, season) %>%
+  summarise(n_samples = n()) %>%
+  arrange(station, season)
+
+# 5. Show the result
+kable(season_site_summary, caption = "Number of Samples per Season and Site (Only for Network Samples)") %>%
+  kable_styling(full_width = FALSE)
+```
+
+Number of Samples per Season and Site (Only for Network Samples)
+station	season	n_samples
+Blanes Bay Microbial Observatory	Autumn	6
+Blanes Bay Microbial Observatory	Spring	5
+Blanes Bay Microbial Observatory	Summer	4
+Blanes Bay Microbial Observatory	Winter	8
+Equatorial Atlantic Microbial Observatory	Autumn	8
+Equatorial Atlantic Microbial Observatory	Spring	5
+Equatorial Atlantic Microbial Observatory	Summer	3
+Equatorial Atlantic Microbial Observatory	Winter	6
+
+## Merge subnetworks per season and site
+```{r}
+# Function to merge subnetworks by season for a given site
+merge_network_by_season <- function(NW, ENV, site_prefix, season_name) {
+  # 1. Get samples for this site and season
+  samples_season <- ENV %>%
+    filter(grepl(site_prefix, SampleID), season == season_name) %>%
+    pull(SampleID_fixed)
+  
+  # 2. Keep only samples that exist in the network columns
+  samples_season_exist <- samples_season[samples_season %in% colnames(NW)]
+  
+  # 3. Columns to keep: Source, Target, and samples of that season
+  columns_to_keep <- c("Source", "Target", samples_season_exist,
+                       "Source_Kingdom", "Source_DivisionPhylum",
+                       "Target_Kingdom","Target_DivisionPhylum")
+  
+  # 4. Subset the network
+  NW_season <- NW[, columns_to_keep, drop = FALSE]
+  
+  # 5. Calculate occurrence
+  if (length(samples_season_exist) > 0) {
+    NW_season$Occurrence <- rowSums(NW_season[, samples_season_exist] > 0)
+  } else {
+    NW_season$Occurrence <- 0
+  }
+
+  # 6. Remove edges with 0 occurrence
+  NW_season <- NW_season %>%
+    filter(Occurrence > 0)
+  
+  # 7. Add Occurrence Percentage (rounded to 2 decimal digits)
+  NW_season$Occurrence_Percentage <- round((NW_season$Occurrence / length(samples_season_exist)) * 100, 2)
+  
+  # 8. Return
+  NW_season_result <- NW_season[, c("Source", "Target", "Occurrence", "Occurrence_Percentage",
+                                    "Source_Kingdom", "Source_DivisionPhylum",
+                                    "Target_Kingdom","Target_DivisionPhylum")]
+  
+  return(NW_season_result)
+}
+
+# Merge networks
+NW_BL_Winter <- merge_network_by_season(NW_BL_annotated, ENV, "BL", "Winter")
+NW_BL_Spring <- merge_network_by_season(NW_BL_annotated, ENV, "BL", "Spring")
+NW_BL_Summer <- merge_network_by_season(NW_BL_annotated, ENV, "BL", "Summer")
+NW_BL_Autumn <- merge_network_by_season(NW_BL_annotated, ENV, "BL", "Autumn")
+
+NW_EA_Winter <- merge_network_by_season(NW_EA_annotated, ENV, "EA", "Winter")
+NW_EA_Spring <- merge_network_by_season(NW_EA_annotated, ENV, "EA", "Spring")
+NW_EA_Summer <- merge_network_by_season(NW_EA_annotated, ENV, "EA", "Summer")
+NW_EA_Autumn <- merge_network_by_season(NW_EA_annotated, ENV, "EA", "Autumn")
+```
+
+```{r}
+head(NW_EA_Summer)
+```
+
+Check merging on an example
+```{r}
+# 1. Define Summer samples for EA
+summer_samples_EA <- ENV %>%
+  filter(grepl("^EA", SampleID), season == "Summer") %>%
+  pull(SampleID_fixed)
+
+# 2. Check which samples exist in NW_EA
+summer_samples_EA_exist <- summer_samples_EA[summer_samples_EA %in% colnames(NW_EA)]
+
+# 3. Columns to select
+columns_to_select <- c("Source", "Target", summer_samples_EA_exist)
+
+# 4. Subset
+NW_EA_summer_subset <- NW_EA[, columns_to_select, drop = FALSE]
+
+# 5. Print first 5 rows for comparison
+cat("\n--- Raw Summer Subset (First 5 rows) ---\n")
+print(head(NW_EA_summer_subset, 5))
+
+cat("\n--- Merged Summer Network (First 5 rows) ---\n")
+print(head(NW_EA_Summer, 5))
+```
+Correct
+
+## Overview occurrence
+```{r}
+# Add site and season labels
+add_labels <- function(df, site, season) {
+  df %>%
+    mutate(Site = site, Season = season)
+}
+
+# Combine all season + site datasets
+NW_all <- bind_rows(
+  add_labels(NW_BL_Winter, "BL", "Winter"),
+  add_labels(NW_BL_Spring, "BL", "Spring"),
+  add_labels(NW_BL_Summer, "BL", "Summer"),
+  add_labels(NW_BL_Autumn, "BL", "Autumn"),
+  add_labels(NW_EA_Winter, "EA", "Winter"),
+  add_labels(NW_EA_Spring, "EA", "Spring"),
+  add_labels(NW_EA_Summer, "EA", "Summer"),
+  add_labels(NW_EA_Autumn, "EA", "Autumn")
+)
+
+# Plot
+p <- ggplot(NW_all, aes(x = Occurrence_Percentage)) +
+  geom_histogram(binwidth = 5, fill = "steelblue", color = "black") +  # 5% bins
+  facet_grid(Site ~ Season) +
+  xlab("Occurrence (%)") +
+  ylab("Number of Edges") +
+  theme_bw() +
+  theme(
+    strip.text = element_text(size = 12, face = "bold"),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 10)
+  ) +
+  ggtitle("Distribution of Edge Occurrence Percentage by Season and Site")
+
+# Show plot in RStudio Viewer
+print(p)
+
+# Save to PDF
+pdf(file = paste0(PATH, "/5_NetworkVisualization/AssociationOccurrence_Histogram_by_Season_and_Site.pdf"),
+    width = 10, height = 6)
+print(p)
+dev.off()
+```
+
+## Save seasonal networks with taxonomy and occurence
+```{r}
+# Create a helper function to save a network
+save_network <- function(df, site, season) {
+  filename <- paste0(PATH, "2_Networks/", site, "_", season, "_SeasonalNetwork_Taxonomy.tsv")
+  write.table(df, file = filename, sep = "\t", quote = FALSE, row.names = FALSE)
+}
+
+# Save all 8 networks
+save_network(NW_BL_Winter, "BL", "Winter")
+save_network(NW_BL_Spring, "BL", "Spring")
+save_network(NW_BL_Summer, "BL", "Summer")
+save_network(NW_BL_Autumn, "BL", "Autumn")
+
+save_network(NW_EA_Winter, "EA", "Winter")
+save_network(NW_EA_Spring, "EA", "Spring")
+save_network(NW_EA_Summer, "EA", "Summer")
+save_network(NW_EA_Autumn, "EA", "Autumn")
+```
+
+## Chord plot
+Filter based on occurrence_percentage > 75%
+```{r}
+# Helper function to filter a network based on Occurrence_Percentage
+filter_high_occurrence <- function(df, threshold = 75) {
+  df %>%
+    filter(Occurrence_Percentage > threshold)
+}
+
+# Apply to all
+NW_BL_Winter_filt <- filter_high_occurrence(NW_BL_Winter)
+NW_BL_Spring_filt <- filter_high_occurrence(NW_BL_Spring)
+NW_BL_Summer_filt <- filter_high_occurrence(NW_BL_Summer)
+NW_BL_Autumn_filt <- filter_high_occurrence(NW_BL_Autumn)
+
+NW_EA_Winter_filt <- filter_high_occurrence(NW_EA_Winter)
+NW_EA_Spring_filt <- filter_high_occurrence(NW_EA_Spring)
+NW_EA_Summer_filt <- filter_high_occurrence(NW_EA_Summer)
+NW_EA_Autumn_filt <- filter_high_occurrence(NW_EA_Autumn)
+```
+
+Generate interaction tables
+```{r}
+# Generate interaction table for chord diagram
+prepare_interaction_table <- function(df) {
+  df %>%
+    count(Source_DivisionPhylum, Target_DivisionPhylum) %>%
+    rename(Weight = n) %>%
+    rowwise() %>%
+    mutate(
+      Source_sorted = min(Source_DivisionPhylum, Target_DivisionPhylum),
+      Target_sorted = max(Source_DivisionPhylum, Target_DivisionPhylum)
+    ) %>%
+    group_by(Source_sorted, Target_sorted) %>%
+    summarise(Weight = sum(Weight), .groups = 'drop')
+}
+
+interaction_BL_Winter <- prepare_interaction_table(NW_BL_Winter_filt)
+interaction_BL_Spring <- prepare_interaction_table(NW_BL_Spring_filt)
+interaction_BL_Summer <- prepare_interaction_table(NW_BL_Summer_filt)
+interaction_BL_Autumn <- prepare_interaction_table(NW_BL_Autumn_filt)
+
+interaction_EA_Winter <- prepare_interaction_table(NW_EA_Winter_filt)
+interaction_EA_Spring <- prepare_interaction_table(NW_EA_Spring_filt)
+interaction_EA_Summer <- prepare_interaction_table(NW_EA_Summer_filt)
+interaction_EA_Autumn <- prepare_interaction_table(NW_EA_Autumn_filt)
+```
+
+Store interaction tables
+```{r}
+write.table(interaction_BL_Winter, 
+            file = paste0(PATH, "/2_Networks/SeasonNW_Above75percentOccurrence_BL_InteractionTable_Winter.tsv"),
+            sep = "\t", row.names = FALSE, quote = FALSE)
+
+write.table(interaction_BL_Spring, 
+            file = paste0(PATH, "/2_Networks/SeasonNW_Above75percentOccurrence_BL_InteractionTable_Spring.tsv"),
+            sep = "\t", row.names = FALSE, quote = FALSE)
+
+write.table(interaction_BL_Summer, 
+            file = paste0(PATH, "/2_Networks/SeasonNW_Above75percentOccurrence_BL_InteractionTable_Summer.tsv"),
+            sep = "\t", row.names = FALSE, quote = FALSE)
+
+write.table(interaction_BL_Autumn, 
+            file = paste0(PATH, "/2_Networks/SeasonNW_Above75percentOccurrence_BL_InteractionTable_Autumn.tsv"),
+            sep = "\t", row.names = FALSE, quote = FALSE)
+
+write.table(interaction_EA_Winter, 
+            file = paste0(PATH, "/2_Networks/SeasonNW_Above75percentOccurrence_EA_InteractionTable_Winter.tsv"),
+            sep = "\t", row.names = FALSE, quote = FALSE)
+
+write.table(interaction_EA_Spring, 
+            file = paste0(PATH, "/2_Networks/SeasonNW_Above75percentOccurrence_EA_InteractionTable_Spring.tsv"),
+            sep = "\t", row.names = FALSE, quote = FALSE)
+
+write.table(interaction_EA_Summer, 
+            file = paste0(PATH, "/2_Networks/SeasonNW_Above75percentOccurrence_EA_InteractionTable_Summer.tsv"),
+            sep = "\t", row.names = FALSE, quote = FALSE)
+
+write.table(interaction_EA_Autumn, 
+            file = paste0(PATH, "/2_Networks/SeasonNW_Above75percentOccurrence_EA_InteractionTable_Autumn.tsv"),
+            sep = "\t", row.names = FALSE, quote = FALSE)
+```
+
+Shared color palette
+```{r}
+# Extract all DivisionPhylum from filtered seasonal networks
+Groups_all_filtered <- sort(unique(c(
+  NW_BL_Winter_filt$Source_DivisionPhylum, NW_BL_Winter_filt$Target_DivisionPhylum,
+  NW_BL_Spring_filt$Source_DivisionPhylum, NW_BL_Spring_filt$Target_DivisionPhylum,
+  NW_BL_Summer_filt$Source_DivisionPhylum, NW_BL_Summer_filt$Target_DivisionPhylum,
+  NW_BL_Autumn_filt$Source_DivisionPhylum, NW_BL_Autumn_filt$Target_DivisionPhylum,
+  NW_EA_Winter_filt$Source_DivisionPhylum, NW_EA_Winter_filt$Target_DivisionPhylum,
+  NW_EA_Spring_filt$Source_DivisionPhylum, NW_EA_Spring_filt$Target_DivisionPhylum,
+  NW_EA_Summer_filt$Source_DivisionPhylum, NW_EA_Summer_filt$Target_DivisionPhylum,
+  NW_EA_Autumn_filt$Source_DivisionPhylum, NW_EA_Autumn_filt$Target_DivisionPhylum
+)))
+
+# Color palette
+colors_all_filtered <- colorRampPalette(brewer.pal(8, "Set2"))(length(Groups_all_filtered))
+grid_colors_all_filtered <- setNames(colors_all_filtered, Groups_all_filtered)
+```
+
+Label abbreviation
+```{r}
+# Step 1: Abbreviations: first 3 letters
+abbreviations_filtered <- substr(Groups_all_filtered, 1, 3)
+
+# Step 2: Create a table with full name and abbreviation
+abbr_table_filtered <- data.frame(
+  FullName = Groups_all_filtered,
+  Abbreviation = abbreviations_filtered,
+  stringsAsFactors = FALSE
+)
+
+# Step 3: Check for abbreviations linked to multiple full names
+duplicate_abbr_filtered <- abbr_table_filtered %>%
+  group_by(Abbreviation) %>%
+  summarise(UniqueFullNames = n_distinct(FullName)) %>%
+  filter(UniqueFullNames > 1)
+
+# Step 4: List only problematic abbreviations
+problematic_abbr_filtered <- duplicate_abbr_filtered$Abbreviation
+
+# Step 5: Show problematic entries
+conflicts_filtered <- abbr_table_filtered %>%
+  filter(Abbreviation %in% problematic_abbr_filtered) %>%
+  arrange(Abbreviation)
+
+cat("Non-unique abbreviations (different long names):\n")
+print(conflicts_filtered)
+```
+There are conflicts:
+- Chloroflexi	Chl
+- Chlorophyta	Chl
+
+Custom abbreviation
+```{r}
+# Step 6: Custom abbreviations for conflicts (only for new conflicts found)
+custom_abbr_filtered <- c(
+  "Chloroflexi"  = "Chlf",  # 4 letters
+  "Chlorophyta"  = "Chlp",   # 4 letters
+  "Rhodelphidia"  = "Rdi",   # 3 letters
+  "Rhodophyta"    = "Rph",   # 3 letters
+  "unknown 16S"   = "u16",   # 3 letters
+  "unknown 18S"   = "u18"    # 3 letters
+  # Add more if any other conflicts appear
+)
+
+# Step 7: Create the abbreviation map
+# Start: default (first 3 letters)
+abbreviation_map_filtered <- setNames(substr(Groups_all_filtered, 1, 3), Groups_all_filtered)
+
+# Step 8: Overwrite conflicts with custom ones
+abbreviation_map_filtered[names(custom_abbr_filtered)] <- custom_abbr_filtered
+```
+
+Chord Diagrams: one per season and site
+```{r}
+# Function to plot seasonal chord diagrams
+plot_season_chord <- function(interaction_table, site, season, PATH) {
+  
+  # Set PDF file name
+  pdf_file <- paste0(PATH, "/5_NetworkVisualization/ChordDiagram_Seasons_", site, "_", season, ".pdf")
+  
+  # Open PDF
+  pdf(file = pdf_file, width = 8, height = 8)
+  
+  # Clear previous plot
+  circos.clear()
+  
+  # Set circos parameters
+  circos.par(
+    gap.after = rep(5, length(unique(c(interaction_table$Source_sorted, interaction_table$Target_sorted)))),
+    start.degree = 90,   # Start at the top
+    track.margin = c(0.05, 0.05),
+    cell.padding = c(0, 0, 0, 0)
+  )
+  
+  # Draw chord diagram
+  chordDiagram(
+    interaction_table %>% select(Source_sorted, Target_sorted, Weight),
+    grid.col = grid_colors_all_filtered,
+    transparency = 0.3,
+    annotationTrack = "grid"
+  )
+  
+  # Add labels (abbreviations)
+  circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+    sector.name <- get.cell.meta.data("sector.index")
+    circos.text(
+      x = mean(get.cell.meta.data("xlim")),
+      y = 1.1,
+      labels = abbreviation_map_filtered[sector.name],
+      facing = "clockwise",
+      niceFacing = TRUE,
+      adj = c(0, 0.5),
+      cex = 0.7
+    )
+  }, bg.border = NA)
+  
+  # Close PDF
+  dev.off()
+  
+  # Clear circos plot
+  circos.clear()
+  
+  message(paste("Saved:", pdf_file))
+}
+```
+
+```{r}
+plot_season_chord(interaction_BL_Winter, site = "BL", season = "Winter", PATH = PATH)
+plot_season_chord(interaction_BL_Spring, site = "BL", season = "Spring", PATH = PATH)
+plot_season_chord(interaction_BL_Summer, site = "BL", season = "Summer", PATH = PATH)
+plot_season_chord(interaction_BL_Autumn, site = "BL", season = "Autumn", PATH = PATH)
+
+plot_season_chord(interaction_EA_Winter, site = "EA", season = "Winter", PATH = PATH)
+plot_season_chord(interaction_EA_Spring, site = "EA", season = "Spring", PATH = PATH)
+plot_season_chord(interaction_EA_Summer, site = "EA", season = "Summer", PATH = PATH)
+plot_season_chord(interaction_EA_Autumn, site = "EA", season = "Autumn", PATH = PATH)
+```
+
+Legend
+```{r}
+# Create a DataFrame for the legend (Filtered Version)
+legend_df_filtered <- data.frame(
+  Color = grid_colors_all_filtered[Groups_all_filtered],            # HEX color codes
+  Abbreviation = abbreviation_map_filtered[Groups_all_filtered],    # 3-letter (or custom) abbreviation
+  FullName = Groups_all_filtered,                                   # Full taxonomic name
+  stringsAsFactors = FALSE
+)
+
+# Save as CSV
+write.csv(legend_df_filtered, file = paste0(PATH, "/5_NetworkVisualization/ChordDiagram_Seasons_Legend.csv"), row.names = FALSE)
+
+# Display simple kable
+kable(legend_df_filtered)
+```
+
+Color swatch legend
+```{r}
+# Color swatch kable
+legend_df_filtered %>%
+  mutate(Color = cell_spec(" ", background = Color)) %>%
+  kable(escape = FALSE, align = "c", format = "html") %>%
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+Save as WORD
+```{r}
+# Create flextable
+ft_filtered <- flextable(legend_df_filtered)
+
+# Set background color for the Color column
+for (i in seq_len(nrow(legend_df_filtered))) {
+  ft_filtered <- bg(ft_filtered, i = i, j = 1, bg = legend_df_filtered$Color[i])
+}
+
+# Set text color for Color column (white text for better contrast)
+ft_filtered <- color(ft_filtered, j = 1, color = "white")
+
+# Autofit
+ft_filtered <- autofit(ft_filtered)
+
+# Show in Viewer
+ft_filtered
+
+# Save as Word
+doc_filtered <- read_docx()
+doc_filtered <- body_add_flextable(doc_filtered, ft_filtered)
+print(doc_filtered, target = paste0(PATH, "/5_NetworkVisualization/ChordDiagram_Seasons_Legend.docx"))
+```

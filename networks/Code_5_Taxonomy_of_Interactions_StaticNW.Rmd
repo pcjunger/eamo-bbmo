@@ -1,0 +1,1105 @@
+---
+title: "TaxonomyOfInteractions"
+author: "Ina Maria Deutschmann"
+date: "06/01/2025"
+output: html_document
+---
+
+# Taxonomy of interactions (Static Network)
+Path and filenames
+```{r}
+PATH <- "~/Documents/Ina/Pedro/"
+
+file_static_NW_BL <- "2_Networks/BL_NW_static.tsv"
+file_static_NW_EA <- "2_Networks/EA_NW_static.tsv"
+file_ASV16S <- "1_Data/ASV_16S_seqs_tax.tsv"
+file_ASV18S <- "1_Data/ASV_18S_seqs_tax.tsv"
+```
+
+Load necessary libraries
+```{r}
+library(dplyr)
+library(tidyr)
+library(circlize)
+library(RColorBrewer)
+library(knitr)
+library(kableExtra)
+library(flextable)
+library(officer)
+```
+
+Load data
+```{r}
+# Load Networks
+NW_BL <- read.table(paste0(PATH, file_static_NW_BL), header = TRUE, stringsAsFactors = FALSE)
+NW_EA <- read.table(paste0(PATH, file_static_NW_EA), header = TRUE, stringsAsFactors = FALSE)
+
+# Load Taxonomy Files
+TAX_16S <- read.table(paste0(PATH, file_ASV16S), header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+TAX_18S <- read.table(paste0(PATH, file_ASV18S), header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+# Set rownames for easy access
+rownames(TAX_16S) <- TAX_16S$ID
+rownames(TAX_18S) <- TAX_18S$ID
+```
+
+Test for missing values BL
+```{r}
+# Extract unique IDs from your network
+network_ids <- unique(c(NW_BL$Source, NW_BL$Target))
+
+# Clean IDs (remove the 16S/18S part to match TAX IDs)
+network_ids_clean <- sub("_(16S_.*|18S_.*)", "", network_ids)
+
+# Split by 16S and 18S
+ids_16S <- network_ids_clean[grepl("16S", network_ids)]
+ids_18S <- network_ids_clean[grepl("18S", network_ids)]
+
+# Find missing IDs
+missing_16S <- ids_16S[!ids_16S %in% rownames(TAX_16S)]
+missing_18S <- ids_18S[!ids_18S %in% rownames(TAX_18S)]
+
+# Combine and Print
+missing_ids <- unique(c(missing_16S, missing_18S))
+
+# Print missing IDs
+cat("Missing IDs:\n")
+print(missing_ids)
+
+# Optional: How many missing
+cat("\nNumber of missing IDs:", length(missing_ids), "\n")
+```
+
+Test for missing values EA
+```{r}
+# Extract unique IDs from your network
+network_ids <- unique(c(NW_EA$Source, NW_EA$Target))
+
+# Clean IDs (remove the 16S/18S part to match TAX IDs)
+network_ids_clean <- sub("_(16S_.*|18S_.*)", "", network_ids)
+
+# Split by 16S and 18S
+ids_16S <- network_ids_clean[grepl("16S", network_ids)]
+ids_18S <- network_ids_clean[grepl("18S", network_ids)]
+
+# Find missing IDs
+missing_16S <- ids_16S[!ids_16S %in% rownames(TAX_16S)]
+missing_18S <- ids_18S[!ids_18S %in% rownames(TAX_18S)]
+
+# Combine and Print
+missing_ids <- unique(c(missing_16S, missing_18S))
+
+# Print missing IDs
+cat("Missing IDs:\n")
+print(missing_ids)
+
+# Optional: How many missing
+cat("\nNumber of missing IDs:", length(missing_ids), "\n")
+```
+Test for NA in Phylum (or Class for Protobacteria) or Devision
+```{r}
+# 16S: Check for NAs in Phylum or Class
+missing_phylum_16S <- TAX_16S %>%
+  filter(is.na(Phylum) | (Phylum == "Proteobacteria" & is.na(Class))) %>%
+  pull(ID)
+
+# 18S: Check for NAs in Division
+missing_division_18S <- TAX_18S %>%
+  filter(is.na(Division)) %>%
+  pull(ID)
+
+# Combine
+missing_taxonomy_ids <- unique(c(missing_phylum_16S, missing_division_18S))
+
+# Print
+cat("IDs with missing Phylum/Class/Division:\n")
+print(missing_taxonomy_ids)
+
+# How many
+cat("\nNumber of IDs with missing taxonomy:", length(missing_taxonomy_ids), "\n")
+```
+
+Annotate Network with Taxonomy
+```{r}
+# Helper Function to Extract Taxonomy (Safe version with unknown labels)
+get_division_phylum <- function(ID) {
+  if (grepl("16S", ID)) {
+    id_clean <- sub("_(16S_.*)", "", ID)
+    if (id_clean %in% rownames(TAX_16S)) {
+      tx <- TAX_16S[id_clean, ]
+      if (is.na(tx$Phylum)) {
+        division_phylum <- "unknown 16S"
+      } else if (tx$Phylum == "Proteobacteria") {
+        division_phylum <- ifelse(is.na(tx$Class), "unknown 16S", tx$Class)
+      } else {
+        division_phylum <- tx$Phylum
+      }
+      return(data.frame(Kingdom = tx$Kingdom, DivisionPhylum = division_phylum))
+    } else {
+      return(data.frame(Kingdom = NA, DivisionPhylum = "unknown 16S"))
+    }
+  } else if (grepl("18S", ID)) {
+    id_clean <- sub("_(18S_.*)", "", ID)
+    if (id_clean %in% rownames(TAX_18S)) {
+      tx <- TAX_18S[id_clean, ]
+      if (is.na(tx$Division)) {
+        division_phylum <- "unknown 18S"
+      } else {
+        division_phylum <- tx$Division
+      }
+      return(data.frame(Kingdom = tx$Kingdom, DivisionPhylum = division_phylum))
+    } else {
+      return(data.frame(Kingdom = NA, DivisionPhylum = "unknown 18S"))
+    }
+  } else {
+    return(data.frame(Kingdom = NA, DivisionPhylum = "unknown"))
+  }
+}
+
+# Annotate Network with Taxonomy
+NW_BL_annotated <- NW_BL %>%
+  mutate(Source_ID = sub("_(16S_.*|18S_.*)", "", Source),
+         Target_ID = sub("_(16S_.*|18S_.*)", "", Target)) %>%
+  rowwise() %>%
+  mutate(Source_Kingdom = get_division_phylum(Source)$Kingdom,
+         Source_DivisionPhylum = get_division_phylum(Source)$DivisionPhylum,
+         Target_Kingdom = get_division_phylum(Target)$Kingdom,
+         Target_DivisionPhylum = get_division_phylum(Target)$DivisionPhylum) %>%
+  ungroup()
+
+NW_EA_annotated <- NW_EA %>%
+  mutate(Source_ID = sub("_(16S_.*|18S_.*)", "", Source),
+         Target_ID = sub("_(16S_.*|18S_.*)", "", Target)) %>%
+  rowwise() %>%
+  mutate(Source_Kingdom = get_division_phylum(Source)$Kingdom,
+         Source_DivisionPhylum = get_division_phylum(Source)$DivisionPhylum,
+         Target_Kingdom = get_division_phylum(Target)$Kingdom,
+         Target_DivisionPhylum = get_division_phylum(Target)$DivisionPhylum) %>%
+  ungroup()
+```
+
+Split based on interaction type
+```{r}
+NW_BL_annotated <- NW_BL_annotated %>%
+  mutate(InteractionType = case_when(
+    Source_Kingdom == "Bacteria" & Target_Kingdom == "Bacteria" ~ "Prokaryote-Prokaryote",
+    Source_Kingdom == "Eukaryota" & Target_Kingdom == "Eukaryota" ~ "Eukaryote-Eukaryote",
+    TRUE ~ "Cross-domain"
+  ))
+
+NW_prok_prok_BL <- NW_BL_annotated %>% filter(InteractionType == "Prokaryote-Prokaryote")
+NW_euk_euk_BL   <- NW_BL_annotated %>% filter(InteractionType == "Eukaryote-Eukaryote")
+NW_cross_BL     <- NW_BL_annotated %>% filter(InteractionType == "Cross-domain")
+
+NW_EA_annotated <- NW_EA_annotated %>%
+  mutate(InteractionType = case_when(
+    Source_Kingdom == "Bacteria" & Target_Kingdom == "Bacteria" ~ "Prokaryote-Prokaryote",
+    Source_Kingdom == "Eukaryota" & Target_Kingdom == "Eukaryota" ~ "Eukaryote-Eukaryote",
+    TRUE ~ "Cross-domain"
+  ))
+
+NW_prok_prok_EA <- NW_EA_annotated %>% filter(InteractionType == "Prokaryote-Prokaryote")
+NW_euk_euk_EA   <- NW_EA_annotated %>% filter(InteractionType == "Eukaryote-Eukaryote")
+NW_cross_EA     <- NW_EA_annotated %>% filter(InteractionType == "Cross-domain")
+```
+
+Split interaction tables
+```{r}
+# Prokaryote-Prokaryote BL
+interaction_table_prok_prok_BL <- NW_prok_prok_BL %>%
+  count(Source_DivisionPhylum, Target_DivisionPhylum) %>%
+  rename(Weight = n) %>%
+  rowwise() %>%
+  mutate(Source_sorted = min(Source_DivisionPhylum, Target_DivisionPhylum),
+         Target_sorted = max(Source_DivisionPhylum, Target_DivisionPhylum)) %>%
+  group_by(Source_sorted, Target_sorted) %>%
+  summarise(Weight = sum(Weight)) %>%
+  ungroup()
+
+# Eukaryote-Eukaryote BL
+interaction_table_euk_euk_BL <- NW_euk_euk_BL %>%
+  count(Source_DivisionPhylum, Target_DivisionPhylum) %>%
+  rename(Weight = n) %>%
+  rowwise() %>%
+  mutate(Source_sorted = min(Source_DivisionPhylum, Target_DivisionPhylum),
+         Target_sorted = max(Source_DivisionPhylum, Target_DivisionPhylum)) %>%
+  group_by(Source_sorted, Target_sorted) %>%
+  summarise(Weight = sum(Weight)) %>%
+  ungroup()
+
+# Cross-domain BL
+interaction_table_cross_BL <- NW_cross_BL %>%
+  count(Source_DivisionPhylum, Target_DivisionPhylum) %>%
+  rename(Weight = n) %>%
+  rowwise() %>%
+  mutate(Source_sorted = min(Source_DivisionPhylum, Target_DivisionPhylum),
+         Target_sorted = max(Source_DivisionPhylum, Target_DivisionPhylum)) %>%
+  group_by(Source_sorted, Target_sorted) %>%
+  summarise(Weight = sum(Weight)) %>%
+  ungroup()
+```
+
+```{r}
+# Prokaryote-Prokaryote EA
+interaction_table_prok_prok_EA <- NW_prok_prok_EA %>%
+  count(Source_DivisionPhylum, Target_DivisionPhylum) %>%
+  rename(Weight = n) %>%
+  rowwise() %>%
+  mutate(Source_sorted = min(Source_DivisionPhylum, Target_DivisionPhylum),
+         Target_sorted = max(Source_DivisionPhylum, Target_DivisionPhylum)) %>%
+  group_by(Source_sorted, Target_sorted) %>%
+  summarise(Weight = sum(Weight)) %>%
+  ungroup()
+
+# Eukaryote-Eukaryote EA
+interaction_table_euk_euk_EA <- NW_euk_euk_EA %>%
+  count(Source_DivisionPhylum, Target_DivisionPhylum) %>%
+  rename(Weight = n) %>%
+  rowwise() %>%
+  mutate(Source_sorted = min(Source_DivisionPhylum, Target_DivisionPhylum),
+         Target_sorted = max(Source_DivisionPhylum, Target_DivisionPhylum)) %>%
+  group_by(Source_sorted, Target_sorted) %>%
+  summarise(Weight = sum(Weight)) %>%
+  ungroup()
+
+# Cross-domain EA
+interaction_table_cross_EA <- NW_cross_EA %>%
+  count(Source_DivisionPhylum, Target_DivisionPhylum) %>%
+  rename(Weight = n) %>%
+  rowwise() %>%
+  mutate(Source_sorted = min(Source_DivisionPhylum, Target_DivisionPhylum),
+         Target_sorted = max(Source_DivisionPhylum, Target_DivisionPhylum)) %>%
+  group_by(Source_sorted, Target_sorted) %>%
+  summarise(Weight = sum(Weight)) %>%
+  ungroup()
+```
+
+Store interaction tables
+```{r}
+write.table(interaction_table_prok_prok_BL, 
+            file = paste0(PATH, "/2_Networks/StaticNW_BL_InteractionTable_ProkProk.tsv"),
+            sep = "\t", row.names = FALSE, quote = FALSE)
+
+write.table(interaction_table_euk_euk_BL, 
+            file = paste0(PATH, "/2_Networks/StaticNW_BLInteractionTable_EukEuk.tsv"),
+            sep = "\t", row.names = FALSE, quote = FALSE)
+
+write.table(interaction_table_cross_BL, 
+            file = paste0(PATH, "/2_Networks/StaticNW_BLInteractionTable_Cross.tsv"),
+            sep = "\t", row.names = FALSE, quote = FALSE)
+
+write.table(interaction_table_prok_prok_EA, 
+            file = paste0(PATH, "/2_Networks/StaticNW_EA_InteractionTable_ProkProk.tsv"),
+            sep = "\t", row.names = FALSE, quote = FALSE)
+
+write.table(interaction_table_euk_euk_EA, 
+            file = paste0(PATH, "/2_Networks/StaticNW_EA_InteractionTable_EukEuk.tsv"),
+            sep = "\t", row.names = FALSE, quote = FALSE)
+
+write.table(interaction_table_cross_EA, 
+            file = paste0(PATH, "/2_Networks/StaticNW_EA_InteractionTable_Cross.tsv"),
+            sep = "\t", row.names = FALSE, quote = FALSE)
+```
+
+Shared color palette
+```{r}
+Groups_BL_all <- unique(c(NW_BL_annotated$Source_DivisionPhylum, NW_BL_annotated$Target_DivisionPhylum))
+Groups_EA_all <- unique(c(NW_EA_annotated$Source_DivisionPhylum, NW_EA_annotated$Target_DivisionPhylum))
+Groups_all <- sort(unique(c(Groups_BL_all, Groups_EA_all)))
+
+# Color palette
+colors_all <- colorRampPalette(brewer.pal(8, "Set2"))(length(Groups_all))
+grid_colors_all <- setNames(colors_all, Groups_all)
+```
+
+Label abbreviation
+```{r}
+# Abbreviations: first 3 letters
+abbreviations <- substr(Groups_all, 1, 3)
+
+# Step 2: Create a table with full name and abbreviation
+abbr_table <- data.frame(
+  FullName = Groups_all,
+  Abbreviation = abbreviations,
+  stringsAsFactors = FALSE
+)
+
+# Step 3: Check for abbreviations linked to multiple full names
+# -> group by abbreviation and count how many distinct full names exist
+duplicate_abbr <- abbr_table %>%
+  group_by(Abbreviation) %>%
+  summarise(UniqueFullNames = n_distinct(FullName)) %>%
+  filter(UniqueFullNames > 1)
+
+# Step 4: List only problematic abbreviations
+problematic_abbr <- duplicate_abbr$Abbreviation
+
+# Step 5: Show problematic entries
+conflicts <- abbr_table %>%
+  filter(Abbreviation %in% problematic_abbr) %>%
+  arrange(Abbreviation)
+
+cat("Non-unique abbreviations (different long names):")
+print(conflicts)
+```
+There are conflicts:
+- Chloroflexi	Chl			
+- Chlorophyta	Chl			
+- Rhodelphidia	Rho			
+- Rhodophyta	Rho			
+- unknown 16S	unk			
+- unknown 18S	unk
+
+Custom abbreviation
+```{r}
+# Custom abbreviations for conflicts
+custom_abbr <- c(
+  "Chloroflexi"   = "Chlf",  # 4 letters
+  "Chlorophyta"   = "Chlp",  # 4 letters
+  "Rhodelphidia"  = "Rdi",   # 3 letters
+  "Rhodophyta"    = "Rph",   # 3 letters
+  "unknown 16S"   = "u16",   # 3 letters
+  "unknown 18S"   = "u18"    # 3 letters
+  # Add more if any other conflicts appear
+)
+
+# Start: default abbreviations
+abbreviation_map <- setNames(substr(Groups_all, 1, 3), Groups_all)
+
+# Overwrite conflicts with custom ones
+abbreviation_map[names(custom_abbr)] <- custom_abbr
+```
+
+Chord Diagram: Prokaryote-Prokaryote BL
+```{r}
+circos.clear()
+circos.par(
+  gap.after = rep(5, length(unique(c(interaction_table_prok_prok_BL$Source_sorted, interaction_table_prok_prok_BL$Target_sorted)))),
+  start.degree = 90,  # 90 degrees moves 0° to the top
+  track.margin = c(0.05, 0.05),
+  cell.padding = c(0, 0, 0, 0))
+chordDiagram(
+  interaction_table_prok_prok_BL %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+
+# Save the plot
+pdf(file = paste0(PATH, "/5_NetworkVisualization/ChordDiagram_StaticNW_BL_ProkProk_all.pdf"))
+chordDiagram(
+  interaction_table_prok_prok_BL %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+dev.off()
+
+circos.clear()
+```
+Only show edges with weight ≥ 3
+```{r}
+# Filter: Keep only interactions with weight >= 3
+interaction_table_filtered <- interaction_table_prok_prok_BL %>%
+  filter(Weight >= 3)
+
+# Create Chord Diagram
+circos.clear()
+circos.par(
+  gap.after = rep(5, length(unique(c(interaction_table_filtered$Source_sorted, interaction_table_filtered$Target_sorted)))),
+  start.degree = 90,
+  track.margin = c(0.05, 0.05),
+  cell.padding = c(0, 0, 0, 0)
+)
+chordDiagram(
+  interaction_table_filtered %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+# Add labels
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+
+# Save the plot
+pdf(file = paste0(PATH, "/5_NetworkVisualization/ChordDiagram_StaticNW_BL_ProkProk_atLeast3.pdf"))
+chordDiagram(
+  interaction_table_filtered %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+# Add labels
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+dev.off()
+
+circos.clear()
+```
+
+Chord Diagram: Eukaryote-Eukaryote BL
+```{r}
+circos.clear()
+circos.par(
+  gap.after = rep(5, length(unique(c(interaction_table_euk_euk_BL$Source_sorted, interaction_table_euk_euk_BL$Target_sorted)))),
+  start.degree = 90,  # 90 degrees moves 0° to the top
+  track.margin = c(0.05, 0.05),
+  cell.padding = c(0, 0, 0, 0))
+chordDiagram(
+  interaction_table_euk_euk_BL %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+
+# Save the plot
+pdf(file = paste0(PATH, "/5_NetworkVisualization/ChordDiagram_StaticNW_BL_EukEuk_all.pdf"))
+chordDiagram(
+  interaction_table_euk_euk_BL %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+dev.off()
+
+circos.clear()
+```
+
+Only show edges with weight ≥ 3
+```{r}
+# Filter: Keep only interactions with weight >= 3
+interaction_table_filtered <- interaction_table_euk_euk_BL %>%
+  filter(Weight >= 3)
+
+# Create Chord Diagram
+circos.clear()
+circos.par(
+  gap.after = rep(5, length(unique(c(interaction_table_filtered$Source_sorted, interaction_table_filtered$Target_sorted)))),
+  start.degree = 90,
+  track.margin = c(0.05, 0.05),
+  cell.padding = c(0, 0, 0, 0)
+)
+chordDiagram(
+  interaction_table_filtered %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+# Add labels
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+
+# Save the plot
+pdf(file = paste0(PATH, "/5_NetworkVisualization/ChordDiagram_StaticNW_BL_EukEuk_atLeast3.pdf"))
+chordDiagram(
+  interaction_table_filtered %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+# Add labels
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+dev.off()
+
+circos.clear()
+```
+
+Chord Diagram: Prokaryote-Eukaryote BL
+```{r}
+circos.clear()
+circos.par(
+  gap.after = rep(5, length(unique(c(interaction_table_cross_BL$Source_sorted, interaction_table_cross_BL$Target_sorted)))),
+  start.degree = 90,  # 90 degrees moves 0° to the top
+  track.margin = c(0.05, 0.05),
+  cell.padding = c(0, 0, 0, 0))
+chordDiagram(
+  interaction_table_cross_BL %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+
+# Save the plot
+pdf(file = paste0(PATH, "/5_NetworkVisualization/ChordDiagram_StaticNW_BL_EukProk_all.pdf"))
+chordDiagram(
+  interaction_table_cross_BL %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+dev.off()
+
+circos.clear()
+```
+Only show edges with weight ≥ 3
+```{r}
+# Filter: Keep only interactions with weight >= 3
+interaction_table_filtered <- interaction_table_cross_BL %>%
+  filter(Weight >= 3)
+
+# Create Chord Diagram
+circos.clear()
+circos.par(
+  gap.after = rep(5, length(unique(c(interaction_table_filtered$Source_sorted, interaction_table_filtered$Target_sorted)))),
+  start.degree = 90,
+  track.margin = c(0.05, 0.05),
+  cell.padding = c(0, 0, 0, 0)
+)
+chordDiagram(
+  interaction_table_filtered %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+# Add labels
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+
+# Save the plot
+pdf(file = paste0(PATH, "/5_NetworkVisualization/ChordDiagram_StaticNW_BL_EukProk_atLeast3.pdf"))
+chordDiagram(
+  interaction_table_filtered %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+# Add labels
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+dev.off()
+
+circos.clear()
+```
+
+Chord Diagram: Prokaryote-Prokaryote EA
+```{r}
+circos.clear()
+circos.par(
+  gap.after = rep(5, length(unique(c(interaction_table_prok_prok_EA$Source_sorted, interaction_table_prok_prok_EA$Target_sorted)))),
+  start.degree = 90,  # 90 degrees moves 0° to the top
+  track.margin = c(0.05, 0.05),
+  cell.padding = c(0, 0, 0, 0))
+chordDiagram(
+  interaction_table_prok_prok_EA %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+
+# Save the plot
+pdf(file = paste0(PATH, "/5_NetworkVisualization/ChordDiagram_StaticNW_EA_ProkProk_all.pdf"))
+chordDiagram(
+  interaction_table_prok_prok_EA %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+dev.off()
+
+circos.clear()
+```
+Only show edges with weight ≥ 3
+```{r}
+# Filter: Keep only interactions with weight >= 3
+interaction_table_filtered <- interaction_table_prok_prok_EA %>%
+  filter(Weight >= 3)
+
+# Create Chord Diagram
+circos.clear()
+circos.par(
+  gap.after = rep(5, length(unique(c(interaction_table_filtered$Source_sorted, interaction_table_filtered$Target_sorted)))),
+  start.degree = 90,
+  track.margin = c(0.05, 0.05),
+  cell.padding = c(0, 0, 0, 0)
+)
+chordDiagram(
+  interaction_table_filtered %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+# Add labels
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+
+# Save the plot
+pdf(file = paste0(PATH, "/5_NetworkVisualization/ChordDiagram_StaticNW_EA_ProkProk_atLeast3.pdf"))
+chordDiagram(
+  interaction_table_filtered %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+# Add labels
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+dev.off()
+
+circos.clear()
+```
+
+Chord Diagram: Eukaryote-Eukaryote EA
+```{r}
+circos.clear()
+circos.par(
+  gap.after = rep(5, length(unique(c(interaction_table_euk_euk_EA$Source_sorted, interaction_table_euk_euk_EA$Target_sorted)))),
+  start.degree = 90,  # 90 degrees moves 0° to the top
+  track.margin = c(0.05, 0.05),
+  cell.padding = c(0, 0, 0, 0))
+chordDiagram(
+  interaction_table_euk_euk_EA %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+
+# Save the plot
+pdf(file = paste0(PATH, "/5_NetworkVisualization/ChordDiagram_StaticNW_EA_EukEuk_all.pdf"))
+chordDiagram(
+  interaction_table_euk_euk_EA %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+dev.off()
+
+circos.clear()
+```
+
+Only show edges with weight ≥ 3
+```{r}
+# Filter: Keep only interactions with weight >= 3
+interaction_table_filtered <- interaction_table_euk_euk_EA %>%
+  filter(Weight >= 3)
+
+# Create Chord Diagram
+circos.clear()
+circos.par(
+  gap.after = rep(5, length(unique(c(interaction_table_filtered$Source_sorted, interaction_table_filtered$Target_sorted)))),
+  start.degree = 90,
+  track.margin = c(0.05, 0.05),
+  cell.padding = c(0, 0, 0, 0)
+)
+chordDiagram(
+  interaction_table_filtered %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+# Add labels
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+
+# Save the plot
+pdf(file = paste0(PATH, "/5_NetworkVisualization/ChordDiagram_StaticNW_EA_EukEuk_atLeast3.pdf"))
+chordDiagram(
+  interaction_table_filtered %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+# Add labels
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+dev.off()
+
+circos.clear()
+```
+
+Chord Diagram: Prokaryote-Eukaryote EA
+```{r}
+circos.clear()
+circos.par(
+  gap.after = rep(5, length(unique(c(interaction_table_cross_EA$Source_sorted, interaction_table_cross_EA$Target_sorted)))),
+  start.degree = 90,  # 90 degrees moves 0° to the top
+  track.margin = c(0.05, 0.05),
+  cell.padding = c(0, 0, 0, 0))
+chordDiagram(
+  interaction_table_cross_EA %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+
+# Save the plot
+pdf(file = paste0(PATH, "/5_NetworkVisualization/ChordDiagram_StaticNW_EA_EukProk_all.pdf"))
+chordDiagram(
+  interaction_table_cross_EA %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+dev.off()
+
+circos.clear()
+```
+Only show edges with weight ≥ 3
+```{r}
+# Filter: Keep only interactions with weight >= 3
+interaction_table_filtered <- interaction_table_cross_EA %>%
+  filter(Weight >= 3)
+
+# Create Chord Diagram
+circos.clear()
+circos.par(
+  gap.after = rep(5, length(unique(c(interaction_table_filtered$Source_sorted, interaction_table_filtered$Target_sorted)))),
+  start.degree = 90,
+  track.margin = c(0.05, 0.05),
+  cell.padding = c(0, 0, 0, 0)
+)
+chordDiagram(
+  interaction_table_filtered %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+# Add labels
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+
+# Save the plot
+pdf(file = paste0(PATH, "/5_NetworkVisualization/ChordDiagram_StaticNW_EA_EukProk_atLeast3.pdf"))
+chordDiagram(
+  interaction_table_filtered %>% select(Source_sorted, Target_sorted, Weight),
+  grid.col = grid_colors_all,
+  transparency = 0.3,
+  annotationTrack = "grid"
+)
+# Add labels
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  sector.name = get.cell.meta.data("sector.index")
+  circos.text(
+    x = mean(get.cell.meta.data("xlim")),
+    y = 1.1,
+    labels = abbreviation_map[sector.name],
+    facing = "clockwise",
+    niceFacing = TRUE,
+    adj = c(0, 0.5),
+    cex = 0.7
+  )
+}, bg.border = NA)
+dev.off()
+
+circos.clear()
+```
+Legend
+```{r}
+# Create a DataFrame for the legend
+legend_df <- data.frame(
+  Color = grid_colors_all[Groups_all],            # HEX color codes
+  Abbreviation = abbreviation_map[Groups_all],    # 3-letter (or custom) abbreviation
+  FullName = Groups_all,                          # Full taxonomic name
+  stringsAsFactors = FALSE
+)
+
+# Save the table
+write.csv(legend_df, file = paste0(PATH, "/5_NetworkVisualization/ChordDiagram_StaticNW_Legend.csv"), row.names = FALSE)
+
+# Display legend
+kable(legend_df)
+```
+
+Color swatch legend
+```{r}
+# Create the legend table if not already
+legend_df <- data.frame(
+  Color = grid_colors_all[Groups_all],
+  Abbreviation = abbreviation_map[Groups_all],
+  FullName = Groups_all,
+  stringsAsFactors = FALSE
+)
+
+# Create kable with color swatch
+legend_df %>%
+  mutate(Color = cell_spec(" ", background = Color)) %>%  # Create empty cell with background color
+  kable(escape = FALSE, align = "c", format = "html") %>%
+  kable_styling(full_width = F, bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+Save as WORD
+```{r}
+# Legend table
+legend_df <- data.frame(
+  Color = grid_colors_all[Groups_all],
+  Abbreviation = abbreviation_map[Groups_all],
+  FullName = Groups_all,
+  stringsAsFactors = FALSE
+)
+
+# Create flextable
+ft <- flextable(legend_df)
+
+# Set background color for the Color column
+for (i in seq_len(nrow(legend_df))) {
+  ft <- bg(ft, i = i, j = 1, bg = legend_df$Color[i])   # 1 is the first column = Color
+}
+
+# Set text color for Color column to white (optional, makes it clean)
+ft <- color(ft, j = 1, color = "white")
+
+# Autofit
+ft <- autofit(ft)
+
+# Show in Viewer
+ft
+
+# Save as Word
+doc <- read_docx()
+doc <- body_add_flextable(doc, ft)
+print(doc, target = paste0(PATH, "/5_NetworkVisualization/ChordDiagram_StaticNW_Legend.docx"))
+```
