@@ -1,0 +1,59 @@
+---
+title: "NetworkVisualizations"
+author: "Ina Maria Deutschmann"
+date: "9/11/2022"
+output: html_document
+---
+
+# Preparing Node Tables and Color Codes for Gephi Network Visualization
+set path
+```{r}
+PATH <- "~/Documents/Ina/Pedro/"
+```
+
+node table for network visualization
+```{r}
+IDs = c("BL", "EA")
+color_palette <- c(
+  "16S_022_3" = "#56B4E9",  # Red for 16S_small
+  "16S_3_200" = "#009E73",  # Green for 16S_large
+  "18S_022_3" = "#CC79A7",  # Blue for 18S_small
+  "18S_3_200" = "#D55E00"   # Yellow for 18S_large
+)
+
+for (i in IDs) {
+  # Data: Read network file and create unique node table
+  NW <- read.table(paste(PATH, "2_Networks/", i, "_temporalNetwork.tsv", sep=""), 
+                   header = TRUE, stringsAsFactors = FALSE)[, c(1:2)]
+  dt <- data.frame(ID = unique(c(NW$Source, NW$Target)))
+  
+  # Extract Kingdom and Sizefraction
+  dt$Kingdom_Sizefraction <- gsub("OTU_[0-9]*_", "", sub("ASV_[0-9]*_", "", dt$ID))
+  
+  # Assign Color Codes
+  dt$ColorCode <- color_palette[dt$Kingdom_Sizefraction]
+  
+  # Overview
+  print(i)
+  print(table(dt$Kingdom_Sizefraction))
+  
+  # Save with ColorCode
+  write.table(dt, 
+              paste("5_NetworkVisualization/Node_table_", i, ".tsv", sep=""), 
+              col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+}
+```
+[1] "BL"
+16S_022_3 16S_3_200 18S_022_3 18S_3_200 
+      753       157       467       529 
+
+[1] "EA"
+16S_022_3 16S_3_200 18S_022_3 18S_3_200 
+      407        84       909       674 
+
+# Visualization in Gephi
+- Gephi 0.10.1
+- Fruchterman Reingold
+--> Area: 10000.0
+--> Gravity: 1.0
+--> Speed: 10.0

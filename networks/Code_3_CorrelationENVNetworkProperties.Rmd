@@ -1,0 +1,187 @@
+---
+title: "CorrelationENVNetworkProperties"
+author: "Ina Maria Deutschmann"
+date: "9/11/2022"
+output: html_document
+---
+
+# Correlation analysis: Global network metrics and environmental factors
+set path
+```{r}
+PATH <- "~/Documents/Ina/Pedro/"
+```
+
+Required Packages
+```{r, echo = FALSE}
+library(ggplot2)
+theme_set(theme_minimal())
+library(psych)
+library(reshape2)
+library("corrplot")
+library(colorspace)
+```
+
+Color code
+```{r}
+Color_Months <- c(Jan="#08519C", Feb="#2171B5", Mar="#6BAED6",
+                  Apr="#006D2C", May="#41AB5D", Jun="#74C476",
+                  Jul="#980043", Aug="#CE1256", Sep="#DF65B0",
+                  Oct="#993404", Nov="#CC4C02", Dec="#EC7014")
+Month_labels <- c("01"="Jan", "02"="Feb", "03"="Mar", "04"="Apr", "05"="May", "06"="Jun",
+                  "07"="Jul", "08"="Aug", "09"="Sep", "10"="Oct", "11"="Nov", "12"="Dec")
+```
+
+Read in files
+```{r, eval = FALSE}
+ENV <- read.table(paste(PATH,"1_Data/ENV_allSamples.tsv",sep=""), header = TRUE, stringsAsFactors = FALSE)
+myENV <- ENV[,-1]
+rownames(myENV) <- ENV$SampleID
+
+IDs = c("BL", "EA")
+
+for(i in IDs)
+{
+  NW <- read.table(paste(PATH,"3_NetworkProperties/NW_properties_overview_temporalNW_",i,".tsv",sep=""), header = TRUE, stringsAsFactors = FALSE)
+  selectedNW <- c("num_nodes", "num_edges", "edge_density", "average_pos_association_strength", "transitivity_global_clusering_coef",
+                  "ave_path_length", "assortativity_nominal_EukProk", "assortativity_degree")
+  myNW <- NW[,selectedNW]
+  
+  # Rename columns
+  colnames(myNW)[which(colnames(myNW)=="num_nodes" )] <- "Number nodes"
+  colnames(myNW)[which(colnames(myNW)=="num_edges" )] <- "Number edges"
+  colnames(myNW)[which(colnames(myNW)=="edge_density" )] <- "Edge density"
+  colnames(myNW)[which(colnames(myNW)=="average_pos_association_strength" )] <- "Avg. positive association"
+  colnames(myNW)[which(colnames(myNW)=="transitivity_global_clusering_coef" )] <- "Transitivity"
+  colnames(myNW)[which(colnames(myNW)=="ave_path_length" )] <- "Avg. path length"
+  colnames(myNW)[which(colnames(myNW)=="assortativity_nominal_EukProk" )] <- "Assortativity (Prok vs. Euk)"
+  colnames(myNW)[which(colnames(myNW)=="assortativity_degree" )] <- "Assortativity (degree)"
+  colnames(myENV)[which(colnames(myENV)=="daylength" )] <- "Day length"
+  
+  # check if network properties and environmental table have same sample order
+  #NW$Sample %in% ENV$SampleID
+
+  ################################################################################################################
+  # Correlate selected nw properties with abiotic environmental facors including nutrients
+  # Spearman correlation test
+  CORR_Spearman <- corr.test(myNW, myENV[NW$Sample,], method="spearman", adjust="holm", alpha=0.05, ci=TRUE)
+  CORR_Spearman_overview <- cbind(melt(CORR_Spearman$r)[,c(1,2)], CORR_Spearman$ci)
+  colnames(CORR_Spearman_overview)[c(1,2)] <- c("NW_prop", "ENV")
+  ENV_order <- colnames(myENV)
+  # http://rstudio-pubs-static.s3.amazonaws.com/12321_1faac44a34c349a788ea22fa691af03b.html
+  p <- ggplot(CORR_Spearman_overview, aes(x = factor(ENV, levels=ENV_order),
+                                     y = factor(NW_prop, levels=rev(colnames(myNW))), fill = r)) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), legend.position = "bottom") +
+    geom_tile() +
+    scale_fill_gradient2(low = "blue",
+                         mid = "white",
+                         high = "red",
+                         midpoint = 0,
+                         name = "SpearmanCorr") +
+    xlab("environmental factor") +
+    ylab("global network metric")
+  ggsave(filename = paste(PATH,"4_CorrelationENVNetworkProperties/",i,"/CorrelationENVNWProperties_",i,".pdf",sep=""), plot = p, width = 6, height = 6)
+  
+  ################################################################################################################
+  # Correlation plot with significance
+  # http://www.sthda.com/english/wiki/visualize-correlation-matrix-using-correlogram
+  # Specialized the insignificant value according to the significant level
+  #paletteFunc <- colorRampPalette(c('red', 'blue'))
+  #palette     <- paletteFunc(8)
+  #corrplot(corr = CORR_Spearman$r, type="full", order="original", p.mat = CORR_Spearman$p, sig.level = 0.05, outline = FALSE, addCoef.col = "black", addCoefasPercent = FALSE, insig = "blank",
+  #         #col = palette
+  #         tl.col = "black", tl.cex = 1)
+  
+  pdf(paste(PATH,"4_CorrelationENVNetworkProperties/",i,"/CorrelationPlotENVNWProperties_",i,".pdf",sep=""))
+  corrplot(corr = CORR_Spearman$r, type="full", order="original", p.mat = CORR_Spearman$p, sig.level = 0.05, outline = FALSE, addCoef.col = "black", addCoefasPercent = FALSE, insig = "blank",
+           #col = palette
+           tl.col = "black", tl.cex = 1)
+  dev.off()
+
+  ################################################################################################################
+  # Scatterplot
+  for(nw_prop in colnames(myNW))
+  {
+    for(env in colnames(myENV))
+    {
+      dt_temp <- data.frame(nw_prop=myNW[,nw_prop], env=myENV[NW$Sample,env], month=Month_labels[substring(NW$Sample,8,9)])
+     
+      p <- ggplot(dt_temp, aes(x=env, y=nw_prop, color=month)) + 
+        theme_classic() + scale_color_manual(values = Color_Months) + theme(text = element_text(size = 20), legend.key.width = unit(5,"line")) +
+        geom_smooth(method="lm", color="lightgrey", alpha=0.2) + geom_point(size=2) + xlab(env) + ylab(nw_prop)
+      ggsave(paste(PATH,"4_CorrelationENVNetworkProperties/",i,"/Scatterplots_",i,"_",nw_prop,"_",env,".pdf",sep=""), plot=p, width = 8, height = 5)
+    }
+  }
+}
+```
+
+## Correlation Plots without salinity
+Read in files
+```{r, eval = FALSE}
+ENV <- read.table(paste(PATH,"1_Data/ENV_allSamples.tsv",sep=""), header = TRUE, stringsAsFactors = FALSE)
+myENV <- ENV[,-1]
+rownames(myENV) <- ENV$SampleID
+
+# Remove salinity
+myENV <- myENV[, !colnames(myENV) == "Salinity"]
+
+IDs = c("BL", "EA")
+
+for(i in IDs)
+{
+  NW <- read.table(paste(PATH,"3_NetworkProperties/NW_properties_overview_temporalNW_",i,".tsv",sep=""), header = TRUE, stringsAsFactors = FALSE)
+  selectedNW <- c("num_nodes", "num_edges", "edge_density", "average_pos_association_strength", "transitivity_global_clusering_coef",
+                  "ave_path_length", "assortativity_nominal_EukProk", "assortativity_degree")
+  myNW <- NW[,selectedNW]
+  
+  # Rename columns
+  colnames(myNW)[which(colnames(myNW)=="num_nodes" )] <- "Number nodes"
+  colnames(myNW)[which(colnames(myNW)=="num_edges" )] <- "Number edges"
+  colnames(myNW)[which(colnames(myNW)=="edge_density" )] <- "Edge density"
+  colnames(myNW)[which(colnames(myNW)=="average_pos_association_strength" )] <- "Avg. positive association"
+  colnames(myNW)[which(colnames(myNW)=="transitivity_global_clusering_coef" )] <- "Transitivity"
+  colnames(myNW)[which(colnames(myNW)=="ave_path_length" )] <- "Avg. path length"
+  colnames(myNW)[which(colnames(myNW)=="assortativity_nominal_EukProk" )] <- "Assortativity (Prok vs. Euk)"
+  colnames(myNW)[which(colnames(myNW)=="assortativity_degree" )] <- "Assortativity (degree)"
+  colnames(myENV)[which(colnames(myENV)=="daylength" )] <- "Day length"
+  
+  # check if network properties and environmental table have same sample order
+  #NW$Sample %in% ENV$SampleID
+
+  ################################################################################################################
+  # Correlate selected nw properties with abiotic environmental facors including nutrients
+  # Spearman correlation test
+  CORR_Spearman <- corr.test(myNW, myENV[NW$Sample,], method="spearman", adjust="holm", alpha=0.05, ci=TRUE)
+  CORR_Spearman_overview <- cbind(melt(CORR_Spearman$r)[,c(1,2)], CORR_Spearman$ci)
+  colnames(CORR_Spearman_overview)[c(1,2)] <- c("NW_prop", "ENV")
+  ENV_order <- colnames(myENV)
+  # http://rstudio-pubs-static.s3.amazonaws.com/12321_1faac44a34c349a788ea22fa691af03b.html
+  p <- ggplot(CORR_Spearman_overview, aes(x = factor(ENV, levels=ENV_order),
+                                     y = factor(NW_prop, levels=rev(colnames(myNW))), fill = r)) +
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), legend.position = "bottom") +
+    geom_tile() +
+    scale_fill_gradient2(low = "blue",
+                         mid = "white",
+                         high = "red",
+                         midpoint = 0,
+                         name = "SpearmanCorr") +
+    xlab("environmental factor") +
+    ylab("global network metric")
+  ggsave(filename = paste(PATH,"4_CorrelationENVNetworkProperties/",i,"/CorrelationENVNWProperties_",i,"_noSalinity.pdf",sep=""), plot = p, width = 6, height = 6)
+  
+  ################################################################################################################
+  # Correlation plot with significance
+  # http://www.sthda.com/english/wiki/visualize-correlation-matrix-using-correlogram
+  # Specialized the insignificant value according to the significant level
+  #paletteFunc <- colorRampPalette(c('red', 'blue'))
+  #palette     <- paletteFunc(8)
+  #corrplot(corr = CORR_Spearman$r, type="full", order="original", p.mat = CORR_Spearman$p, sig.level = 0.05, outline = FALSE, addCoef.col = "black", addCoefasPercent = FALSE, insig = "blank",
+  #         #col = palette
+  #         tl.col = "black", tl.cex = 1)
+  
+  pdf(paste(PATH,"4_CorrelationENVNetworkProperties/",i,"/CorrelationPlotENVNWProperties_",i,"_noSalinity.pdf",sep=""))
+  corrplot(corr = CORR_Spearman$r, type="full", order="original", p.mat = CORR_Spearman$p, sig.level = 0.05, outline = FALSE, addCoef.col = "black", addCoefasPercent = FALSE, insig = "blank",
+           #col = palette
+           tl.col = "black", tl.cex = 1)
+  dev.off()
+}
+```
