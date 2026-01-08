@@ -1,0 +1,1463 @@
+---
+title: "TemporalNetworks"
+author: "Ina Maria Deutschmann"
+date: "01/12/2025"
+output: html_document
+---
+
+# Overview
+1. Preprocessing
+- remove and store taxonomic information in separate file
+- filter for samples containing both kingdoms and both size fractions
+- filter out rare ASVs (abundance sum > 100 reads and frequency > 15% occurrences)
+- size fraction filtering as done in https://microbiomejournal.biomedcentral.com/articles/10.1186/s40168-023-01523-z (GitHub code: https://github.com/InaMariaDeutschmann/TemporalNetworkBBMO/blob/main/0_FromASVTableToTemporalNetwork.Rmd)
+- clr-transformation
+- merge tables to have one table per location (BL and EA)
+
+2. Network inference
+- Network construction with FlashWeave to infer single static network
+- Removing environmental edges with EnDED
+- Determine temporal network from single static network via subnetworks: an edge is present in a monthly subnetwork when both microorganisms of the predicted associations are present (abundance > 0)
+
+## Set Up
+Variables
+```{r}
+PATH <- "~/Documents/Ina/Pedro/"
+CUTOFF_ABUNDANCE <- 100
+CUTOFF_FREQUENCY <- 15
+
+file_ASV16S <- "0_PedroData/ASVtab_16SV4V5_seqs_tax_v138_CLEANED_NoMock_NoChla_NoMitoch_min5570r.csv"
+file_ASV18S <- "0_PedroData/ASVtab_18SV4_seqs_tax_pr2V4_14_NoMetazoaFungi_NoEukNA_NoStreptophyta_NoOpisthokontaNA_min9513.csv"
+file_ENV <- "0_PedroData/EnvData_EAMO_BBMO_12112024.csv"
+```
+
+Required Packages
+```{r, echo = FALSE}
+library(dplyr)         # mutate_at
+library(compositions)  # clr transform
+library(VennDiagram)
+library(RColorBrewer)
+color_palette <- brewer.pal(4, "Set2")
+```
+
+## 1. Preprocessing
+- remove and store taxonomic information in separate file
+```{r}
+# 16S
+dt <- read.csv(paste(PATH, file_ASV16S, sep=""), header = TRUE)
+colnames(dt)[1] <- "Sequence"
+dt_temp <- dt[,c("ASV", "Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Sequence")]
+colnames(dt_temp)[1] <- "ID"
+write.table(dt_temp, paste(PATH,"1_Data/ASV_16S_seqs_tax.tsv",sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+dt$Kingdom <- NULL
+dt$Phylum <- NULL
+dt$Class <- NULL
+dt$Order <- NULL
+dt$Family <- NULL
+dt$Genus <- NULL
+dt_16S <- dt[,sort(colnames(dt))]
+
+# 18S
+dt <- read.csv(paste(PATH, file_ASV18S, sep=""), header = TRUE)
+colnames(dt)[1] <- "Sequence"
+dt_temp <- dt[,c("ASV", "Kingdom", "Supergroup", "Division", "Class", "Order", "Family", "Genus", "Species", "reads", "Sequence")]
+colnames(dt_temp)[1] <- "ID"
+write.table(dt_temp, paste(PATH,"1_Data/ASV_18S_seqs_tax.tsv",sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+dt$Kingdom <- NULL
+dt$Supergroup <- NULL
+dt$Division <- NULL
+dt$Class <- NULL
+dt$Order <- NULL
+dt$Family <- NULL
+dt$Genus <- NULL
+dt$Species <- NULL
+dt$reads <- NULL
+dt$Sequence <- NULL
+dt_18S <- dt[,sort(colnames(dt))]
+```
+
+-> number of samples
+--> 16S: 122 samples
+--> 18S: 130 samples
+
+- separate samples based on sizefraction
+```{r}
+# sample IDs 16S
+BL_samples <- colnames(dt_16S)[grep("BL",colnames(dt_16S))]
+BL_16S_small_size_fraction <- sort(gsub(".16SV4V5.022.3.SRF","", BL_samples[grep("022.3", BL_samples)]))
+BL_16S_big_size_fraction <- sort(gsub(".16SV4V5.3.200.SRF","", BL_samples[grep("3.200", BL_samples)]))
+
+EA_samples <- colnames(dt_16S)[grep("EA",colnames(dt_16S))]
+EA_16S_small_size_fraction <- sort(gsub(".16SV4V5.022.3.SRF","", EA_samples[grep("022.3", EA_samples)]))
+EA_16S_big_size_fraction <- sort(gsub(".16SV4V5.3.200.SRF","", EA_samples[grep("3.200", EA_samples)]))
+
+# sample IDs 18S
+BL_samples <- colnames(dt_18S)[grep("BL",colnames(dt_18S))]
+BL_18S_small_size_fraction <- sort(gsub(".18SV4.022.3.SRF","", BL_samples[grep("022.3", BL_samples)]))
+BL_18S_big_size_fraction <- sort(gsub(".18SV4.3.200.SRF","", BL_samples[grep("3.200", BL_samples)]))
+
+EA_samples <- colnames(dt_18S)[grep("EA",colnames(dt_18S))]
+EA_18S_small_size_fraction <- sort(gsub(".18SV4.022.3.SRF","", EA_samples[grep("022.3", EA_samples)]))
+EA_18S_big_size_fraction <- sort(gsub(".18SV4.3.200.SRF","", EA_samples[grep("3.200", EA_samples)]))
+```
+
+- Overview: how many samples (BL)
+```{r}
+# Create the data frame with all samples
+dt_temp <- data.frame(ID = "BL_16S_022_3", samples = BL_16S_small_size_fraction)
+dt_temp <- rbind(dt_temp,
+                 data.frame(ID = "BL_16S_3_200", samples = BL_16S_big_size_fraction))
+dt_temp <- rbind(dt_temp,
+                 data.frame(ID = "BL_18S_022_3", samples = BL_18S_small_size_fraction))
+dt_temp <- rbind(dt_temp,
+                 data.frame(ID = "BL_18S_3_200", samples = BL_18S_big_size_fraction))
+
+# Extract unique samples for each group
+BL_16S_small <- unique(dt_temp$samples[dt_temp$ID == "BL_16S_022_3"])
+BL_16S_big <- unique(dt_temp$samples[dt_temp$ID == "BL_16S_3_200"])
+BL_18S_small <- unique(dt_temp$samples[dt_temp$ID == "BL_18S_022_3"])
+BL_18S_big <- unique(dt_temp$samples[dt_temp$ID == "BL_18S_3_200"])
+
+# Create a list of these sample sets
+venn_data <- list(
+  "16S Small" = BL_16S_small,
+  "16S Big" = BL_16S_big,
+  "18S Small" = BL_18S_small,
+  "18S Big" = BL_18S_big
+)
+
+# Generate the Venn diagram
+venn.plot <- venn.diagram(
+  x = venn_data,
+  category.names = names(venn_data),
+  filename = NULL,  # Keep this NULL to display it directly
+  output = TRUE,
+  
+  # Styling options for the diagram
+  lwd = 2,
+  fill = color_palette,
+  alpha = 0.5,
+  cex = 1.5,
+  fontfamily = "sans",
+  cat.fontfamily = "sans",
+  cat.cex = 1.5,
+  cat.pos = 0
+)
+
+# Save the Venn diagram as a PDF file
+pdf("1_Data/venn_diagram_NumSamples_BL.pdf", width = 8, height = 8)  # Opens a PDF device
+grid.newpage()  # Starts a new page in the PDF
+grid.draw(venn.plot)  # Draws the Venn diagram on the PDF page
+dev.off()  # Closes the PDF device and saves the file
+```
+
+- Venn Diagram BL: How many samples contain the kingdoms and size fractions
+```{r, echo=FALSE, fig.width=3, fig.height=3, fig.align='center'}
+# Plot the Venn diagram
+grid.newpage()
+grid.draw(venn.plot)
+```
+
+- Table BL: Which samples contain which kingdoms and size fractions
+```{r}
+t(table(dt_temp))
+```
+             ID
+samples       BL_16S_022_3 BL_16S_3_200 BL_18S_022_3 BL_18S_3_200
+  BL.20130206            1            0            0            0
+  BL.20130417            1            1            1            1
+  BL.20130507            1            1            1            1
+  BL.20130604            1            1            1            1
+  BL.20130709            1            1            1            1
+  BL.20130801            1            1            1            1
+  BL.20130917            1            1            1            1
+  BL.20131015            1            1            1            1
+  BL.20131105            1            1            1            0
+  BL.20131204            1            1            1            0
+  BL.20140114            1            1            1            1
+  BL.20140211            1            1            1            1
+  BL.20140310            1            1            1            1
+  BL.20140407            0            1            0            1
+  BL.20140505            1            1            0            1
+  BL.20140602            1            1            0            1
+  BL.20140621            1            0            0            1
+  BL.20140707            1            0            0            1
+  BL.20140804            1            0            0            1
+  BL.20140916            1            0            0            1
+  BL.20141007            1            1            1            1
+  BL.20141111            1            1            1            1
+  BL.20141216            1            0            1            1
+  BL.20150113            1            1            1            1
+  BL.20150210            1            1            1            1
+  BL.20150310            1            0            1            1
+  BL.20150415            1            1            0            1
+  BL.20150512            1            0            1            1
+  BL.20150609            0            0            1            1
+  BL.20150622            0            0            1            1
+  BL.20150707            1            0            1            1
+  BL.20150804            1            0            1            1
+  BL.20150916            1            1            1            1
+  BL.20151006            1            1            1            1
+  BL.20151110            1            1            1            1
+  BL.20151215            1            1            1            1
+  BL.20160119            1            1            1            1
+  BL.20160210            1            1            1            1
+  BL.20160308            1            1            1            1
+  BL.20160405            1            1            1            1
+  BL.20160504            1            1            1            1
+  BL.20160607            1            0            1            1
+  BL.20160802            1            1            0            0
+
+- Overview: how many samples (EA)
+```{r}
+# Create the data frame with all samples
+dt_temp <- data.frame(ID = "EA_16S_022_3", samples = EA_16S_small_size_fraction)
+dt_temp <- rbind(dt_temp,
+                 data.frame(ID = "EA_16S_3_200", samples = EA_16S_big_size_fraction))
+dt_temp <- rbind(dt_temp,
+                 data.frame(ID = "EA_18S_022_3", samples = EA_18S_small_size_fraction))
+dt_temp <- rbind(dt_temp,
+                 data.frame(ID = "EA_18S_3_200", samples = EA_18S_big_size_fraction))
+
+# Extract unique samples for each group
+EA_16S_small <- unique(dt_temp$samples[dt_temp$ID == "EA_16S_022_3"])
+EA_16S_big <- unique(dt_temp$samples[dt_temp$ID == "EA_16S_3_200"])
+EA_18S_small <- unique(dt_temp$samples[dt_temp$ID == "EA_18S_022_3"])
+EA_18S_big <- unique(dt_temp$samples[dt_temp$ID == "EA_18S_3_200"])
+
+# Create a list of these sample sets
+venn_data <- list(
+  "16S Small" = EA_16S_small,
+  "16S Big" = EA_16S_big,
+  "18S Small" = EA_18S_small,
+  "18S Big" = EA_18S_big
+)
+
+# Generate the Venn diagram
+venn.plot <- venn.diagram(
+  x = venn_data,
+  category.names = names(venn_data),
+  filename = NULL,  # Keep this NULL to display it directly
+  output = TRUE,
+  
+  # Styling options for the diagram
+  lwd = 2,
+  fill = color_palette,
+  alpha = 0.5,
+  cex = 1.5,
+  fontfamily = "sans",
+  cat.fontfamily = "sans",
+  cat.cex = 1.5,
+  cat.pos = 0
+)
+
+# Save the Venn diagram as a PDF file
+pdf("1_Data/venn_diagram_NumSamples_EA.pdf", width = 8, height = 8)  # Opens a PDF device
+grid.newpage()  # Starts a new page in the PDF
+grid.draw(venn.plot)  # Draws the Venn diagram on the PDF page
+dev.off()  # Closes the PDF device and saves the file
+```
+
+- Venn Diagram EA: How many samples contain the kingdoms and size fractions
+```{r, echo=FALSE, fig.width=3, fig.height=3, fig.align='center'}
+# Plot the Venn diagram
+grid.newpage()
+grid.draw(venn.plot)
+```
+
+- Table EA: Which samples contain which kingdoms and size fractions
+```{r}
+t(table(dt_temp))
+```
+             ID
+samples       EA_16S_022_3 EA_16S_3_200 EA_18S_022_3 EA_18S_3_200
+  EA.20130423            1            1            1            1
+  EA.20130604            1            1            1            1
+  EA.20130625            1            1            1            1
+  EA.20130827            1            0            1            0
+  EA.20131127            1            1            1            1
+  EA.20131230            1            1            1            1
+  EA.20140211            1            0            1            1
+  EA.20140326            1            0            0            1
+  EA.20140415            1            1            1            1
+  EA.20140514            1            1            1            1
+  EA.20140707            1            0            0            1
+  EA.20140729            1            0            1            0
+  EA.20140826            1            0            1            1
+  EA.20140930            1            0            1            1
+  EA.20141029            1            1            1            1
+  EA.20141125            1            0            1            1
+  EA.20150115            0            0            1            1
+  EA.20150227            0            0            1            1
+  EA.20150228            1            1            0            0
+  EA.20150328            1            1            1            1
+  EA.20150425            1            0            1            1
+  EA.20150516            1            1            1            1
+  EA.20150627            1            1            1            1
+  EA.20150801            1            1            1            1
+  EA.20150829            1            1            1            1
+  EA.20151006            1            1            1            1
+  EA.20151208            1            1            1            1
+  EA.20160225            1            1            1            1
+  EA.20160322            1            1            1            1
+  EA.20160502            1            1            1            1
+  EA.20160611            1            1            1            1
+  EA.20160822            1            1            1            1
+
+-> 23 samples BL and 22 samples EA have 16S and 18S in both size fractions
+
+Save
+```{r}
+write.table(dt_16S, paste(PATH,"1_Data/ASV_16S_all_abund.tsv",sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+write.table(dt_18S, paste(PATH,"1_Data/ASV_18S_all_abund.tsv",sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+```
+
+- Overview number of samples per location, kingdom, and size fraction
+```{r}
+# Read in tables
+dt_16S <- read.table(paste(PATH,"1_Data/ASV_16S_all_abund.tsv",sep=""), header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+dt_18S <- read.table(paste(PATH,"1_Data/ASV_18S_all_abund.tsv",sep=""), header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+
+# Number of samples after sample filtering
+print("BL")
+print(paste("16S_022_3:",length(BL_16S_small_size_fraction)))
+print(paste("16S_3_200:",length(BL_16S_big_size_fraction)))
+print(paste("16S_022_3 + 16S_3_200:",length(intersect(BL_16S_small_size_fraction, BL_16S_big_size_fraction))))
+print(paste("18S_022_3:",length(BL_18S_small_size_fraction)))
+print(paste("18S_3_200:",length(BL_18S_big_size_fraction)))
+print(paste("18S_022_3 + 18S_3_200:",length(intersect(BL_18S_small_size_fraction, BL_18S_big_size_fraction))))
+print(paste("16S_022_3 + 18S_022_3:",length(intersect(BL_16S_small_size_fraction, BL_18S_small_size_fraction))))
+print(paste("16S_3_200 + 18S_3_200:",length(intersect(BL_16S_big_size_fraction, BL_18S_big_size_fraction))))
+print(paste("all 4:",length(intersect(intersect(BL_16S_small_size_fraction, BL_16S_big_size_fraction), intersect(BL_18S_small_size_fraction, BL_18S_big_size_fraction)))))
+
+print("EA")
+print(paste("16S_022_3:",length(EA_16S_small_size_fraction)))
+print(paste("16S_3_200:",length(EA_16S_big_size_fraction)))
+print(paste("16S_022_3 + 16S_3_200:",length(intersect(EA_16S_small_size_fraction, EA_16S_big_size_fraction))))
+print(paste("18S_022_3:",length(EA_18S_small_size_fraction)))
+print(paste("18S_3_200:",length(EA_18S_big_size_fraction)))
+print(paste("18S_022_3 + 18S_3_200:",length(intersect(EA_18S_small_size_fraction, EA_18S_big_size_fraction))))
+print(paste("16S_022_3 + 18S_022_3:",length(intersect(EA_16S_small_size_fraction, EA_18S_small_size_fraction))))
+print(paste("16S_3_200 + 18S_3_200:",length(intersect(EA_16S_big_size_fraction, EA_18S_big_size_fraction))))
+print(paste("all 4:",length(intersect(intersect(EA_16S_small_size_fraction, EA_16S_big_size_fraction), intersect(EA_18S_small_size_fraction, EA_18S_big_size_fraction)))))
+```
+[1] "BL"
+[1] "16S_022_3: 40"
+[1] "16S_3_200: 30"
+[1] "16S_022_3 + 16S_3_200: 29"
+[1] "18S_022_3: 33"
+[1] "18S_3_200: 39"
+[1] "18S_022_3 + 18S_3_200: 31"
+[1] "16S_022_3 + 18S_022_3: 31"
+[1] "16S_3_200 + 18S_3_200: 27"
+[1] "all 4: 23"
+[1] "EA"
+[1] "16S_022_3: 30"
+[1] "16S_3_200: 22"
+[1] "16S_022_3 + 16S_3_200: 22"
+[1] "18S_022_3: 29"
+[1] "18S_3_200: 29"
+[1] "18S_022_3 + 18S_3_200: 27"
+[1] "16S_022_3 + 18S_022_3: 28"
+[1] "16S_3_200 + 18S_3_200: 22"
+[1] "all 4: 22"
+
+- filter out rare ASVs: abundance sum above CUTOFF_ABUNDANCE and prevalence above CUTOFF_FREQUENCY
+```{r}
+# Overview
+# 16S
+print("16S")
+for(i in c("BL", "EA")){
+  for(j in c("022.3", "3.200")){
+    dt <- dt_16S[,grep(i,colnames(dt_16S))]
+    dt <- dt[,grep(j,colnames(dt))]
+    print(paste(i,j))
+    print(paste(sum(rowSums(dt)>CUTOFF_ABUNDANCE), " ASVs with abundance sum > ", CUTOFF_ABUNDANCE, sep=""))
+    print(paste(sum((rowSums(1*(dt>0))/(dim(dt)[2])*100)>CUTOFF_FREQUENCY), " ASVs with prevalence > ", CUTOFF_FREQUENCY, "% (present in >",(dim(dt)[2])/100*CUTOFF_FREQUENCY," samples)", sep=""))
+    dt_temp <- dt[which((rowSums(dt)>CUTOFF_ABUNDANCE) & ((rowSums(1*(dt>0))/(dim(dt)[2])*100)>CUTOFF_FREQUENCY)),]
+    print(paste(dim(dt_temp)[1], " ASVs with abundance sum > ", CUTOFF_ABUNDANCE, " and prevalence > ", CUTOFF_FREQUENCY, "% (present in >",(dim(dt)[2])/100*CUTOFF_FREQUENCY," samples)", sep=""))
+  }
+}
+# 18S
+print("18S")
+for(i in c("BL", "EA")){
+  for(j in c("022.3", "3.200")){
+    dt <- dt_18S[,grep(i,colnames(dt_16S))]
+    dt <- dt[,grep(j,colnames(dt))]
+    print(paste(i,j))
+    print(paste(sum(rowSums(dt)>CUTOFF_ABUNDANCE), " ASVs with abundance sum > ", CUTOFF_ABUNDANCE, sep=""))
+    print(paste(sum((rowSums(1*(dt>0))/(dim(dt)[2])*100)>CUTOFF_FREQUENCY), " ASVs with prevalence > ", CUTOFF_FREQUENCY, "% (present in >",(dim(dt)[2])/100*CUTOFF_FREQUENCY," samples)", sep=""))
+    dt_temp <- dt[which((rowSums(dt)>CUTOFF_ABUNDANCE) & ((rowSums(1*(dt>0))/(dim(dt)[2])*100)>CUTOFF_FREQUENCY)),]
+    print(paste(dim(dt_temp)[1], " ASVs with abundance sum > ", CUTOFF_ABUNDANCE, " and prevalence > ", CUTOFF_FREQUENCY, "% (present in >",(dim(dt)[2])/100*CUTOFF_FREQUENCY," samples)", sep=""))
+  }
+}
+
+# Create tables
+BL_intersection <- intersect(intersect(BL_16S_small_size_fraction, BL_16S_big_size_fraction),
+                             intersect(BL_18S_small_size_fraction, BL_18S_big_size_fraction))
+EA_intersection <- intersect(intersect(EA_16S_small_size_fraction, EA_16S_big_size_fraction),
+                             intersect(EA_18S_small_size_fraction, EA_18S_big_size_fraction))
+
+for(i in c("BL", "EA"))
+{
+  if(i=="BL"){
+    col_names <- BL_intersection
+  }else{
+    col_names <- EA_intersection
+  }
+  for(j in c("022.3", "3.200"))
+  {
+    # 16S
+    dt <- dt_16S[,grep(i,colnames(dt_16S))]
+    dt <- dt[,grep(j,colnames(dt))]
+    rownames(dt) <- dt_16S$ASV
+    colnames(dt) <- gsub(".18SV4.", "", gsub(".16SV4V5.", "", gsub("022.3.SRF","", gsub("3.200.SRF","", colnames(dt)))))
+    dt <- dt[,col_names]
+    print(paste(i, j, "16S before filtering:", dim(dt)[1], dim(dt)[2]))
+    dt <- dt[which((rowSums(dt)>CUTOFF_ABUNDANCE) & ((rowSums(1*(dt>0))/(dim(dt)[2])*100)>CUTOFF_FREQUENCY)),]
+    print(paste(i, j, "16S after filtering:", dim(dt)[1], dim(dt)[2]))
+    dt$ASV <- paste(rownames(dt),"16S",j,sep="_")
+    dt <- dt[,sort(colnames(dt))]
+    rownames(dt) <- dt$ASV
+    write.table(dt, paste(PATH,"1_Data/",i,"_",j,"_16S_abundances_rareASV_filtering.tsv", sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+    print(paste("16S + ", i, " + ", j, " (intersection of samples): ", dim(dt)[1], " ASVs with abundance sum > ", CUTOFF_ABUNDANCE, " and prevalence > ", CUTOFF_FREQUENCY, "% (present in >",(dim(dt)[2])/100*CUTOFF_FREQUENCY," samples)", sep=""))
+    
+    # 18S
+    dt <- dt_18S[,grep(i,colnames(dt_18S))]
+    dt <- dt[,grep(j,colnames(dt))]
+    rownames(dt) <- dt_18S$ASV
+    colnames(dt) <- gsub(".18SV4.", "", gsub(".16SV4V5.", "", gsub("022.3.SRF","", gsub("3.200.SRF","", colnames(dt)))))
+    dt <- dt[,col_names]
+    print(paste(i, j, "18S before filtering:", dim(dt)[1], dim(dt)[2]))
+    dt <- dt[which((rowSums(dt)>CUTOFF_ABUNDANCE) & ((rowSums(1*(dt>0))/(dim(dt)[2])*100)>CUTOFF_FREQUENCY)),]
+    print(paste(i, j, "18S after filtering:", dim(dt)[1], dim(dt)[2]))
+    dt$ASV <- paste(rownames(dt),"18S",j,sep="_")
+    dt <- dt[,sort(colnames(dt))]
+    rownames(dt) <- dt$ASV
+    write.table(dt, paste(PATH,"1_Data/",i,"_",j,"_18S_abundances_rareASV_filtering.tsv", sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+    print(paste("18S + ", i, " + ", j, " (intersection of samples): ", dim(dt)[1], " ASVs with abundance sum > ", CUTOFF_ABUNDANCE, " and prevalence > ", CUTOFF_FREQUENCY, "% (present in >",(dim(dt)[2])/100*CUTOFF_FREQUENCY," samples)", sep=""))
+
+  }
+}
+```
+-> with abundance cut_off 100, and frequency 15%
+[1] "16S"
+[1] "BL 022.3"
+[1] "1137 ASVs with abundance sum > 100"
+[1] "981 ASVs with prevalence > 15% (present in >6 samples)"
+[1] "818 ASVs with abundance sum > 100 and prevalence > 15% (present in >6 samples)"
+
+[1] "BL 3.200"
+[1] "578 ASVs with abundance sum > 100"
+[1] "617 ASVs with prevalence > 15% (present in >4.5 samples)"
+[1] "442 ASVs with abundance sum > 100 and prevalence > 15% (present in >4.5 samples)"
+
+[1] "EA 022.3"
+[1] "831 ASVs with abundance sum > 100"
+[1] "924 ASVs with prevalence > 15% (present in >4.5 samples)"
+[1] "655 ASVs with abundance sum > 100 and prevalence > 15% (present in >4.5 samples)"
+
+[1] "EA 3.200"
+[1] "308 ASVs with abundance sum > 100"
+[1] "507 ASVs with prevalence > 15% (present in >3.3 samples)"
+[1] "257 ASVs with abundance sum > 100 and prevalence > 15% (present in >3.3 samples)"
+
+[1] "18S"
+[1] "BL 022.3"
+[1] "2547 ASVs with abundance sum > 100"
+[1] "662 ASVs with prevalence > 15% (present in >4.8 samples)"
+[1] "628 ASVs with abundance sum > 100 and prevalence > 15% (present in >4.8 samples)"
+
+[1] "BL 3.200"
+[1] "2395 ASVs with abundance sum > 100"
+[1] "619 ASVs with prevalence > 15% (present in >5.7 samples)"
+[1] "598 ASVs with abundance sum > 100 and prevalence > 15% (present in >5.7 samples)"
+
+[1] "EA 022.3"
+[1] "2358 ASVs with abundance sum > 100"
+[1] "1657 ASVs with prevalence > 15% (present in >3.9 samples)"
+[1] "1447 ASVs with abundance sum > 100 and prevalence > 15% (present in >3.9 samples)"
+
+[1] "EA 3.200"
+[1] "2024 ASVs with abundance sum > 100"
+[1] "1220 ASVs with prevalence > 15% (present in >3.9 samples)"
+[1] "1083 ASVs with abundance sum > 100 and prevalence > 15% (present in >3.9 samples)"
+
+[1] "BL 022.3 16S before filtering: 20335 23"
+[1] "BL 022.3 16S after filtering: 797 23"
+[1] "16S + BL + 022.3 (intersection of samples): 797 ASVs with abundance sum > 100 and prevalence > 15% (present in >3.6 samples)"
+
+[1] "BL 022.3 18S before filtering: 20699 23"
+[1] "BL 022.3 18S after filtering: 577 23"
+[1] "18S + BL + 022.3 (intersection of samples): 577 ASVs with abundance sum > 100 and prevalence > 15% (present in >3.6 samples)"
+
+[1] "BL 3.200 16S before filtering: 20335 23"
+[1] "BL 3.200 16S after filtering: 414 23"
+[1] "16S + BL + 3.200 (intersection of samples): 414 ASVs with abundance sum > 100 and prevalence > 15% (present in >3.6 samples)"
+
+[1] "BL 3.200 18S before filtering: 20699 23"
+[1] "BL 3.200 18S after filtering: 690 23"
+[1] "18S + BL + 3.200 (intersection of samples): 690 ASVs with abundance sum > 100 and prevalence > 15% (present in >3.6 samples)"
+
+[1] "EA 022.3 16S before filtering: 20335 22"
+[1] "EA 022.3 16S after filtering: 578 22"
+[1] "16S + EA + 022.3 (intersection of samples): 578 ASVs with abundance sum > 100 and prevalence > 15% (present in >3.45 samples)"
+
+[1] "EA 022.3 18S before filtering: 20699 22"
+[1] "EA 022.3 18S after filtering: 1296 22"
+[1] "18S + EA + 022.3 (intersection of samples): 1296 ASVs with abundance sum > 100 and prevalence > 15% (present in >3.45 samples)"
+
+[1] "EA 3.200 16S before filtering: 20335 22"
+[1] "EA 3.200 16S after filtering: 257 22"
+[1] "16S + EA + 3.200 (intersection of samples): 257 ASVs with abundance sum > 100 and prevalence > 15% (present in >3.45 samples)"
+
+[1] "EA 3.200 18S before filtering: 20699 22"
+[1] "EA 3.200 18S after filtering: 1114 22"
+[1] "18S + EA + 3.200 (intersection of samples): 1114 ASVs with abundance sum > 100 and prevalence > 15% (present in >3.45 samples)"
+
+- Size fraction filtering as done in https://microbiomejournal.biomedcentral.com/articles/10.1186/s40168-023-01523-z (GitHub code: https://github.com/InaMariaDeutschmann/TemporalNetworkBBMO/blob/main/0_FromASVTableToTemporalNetwork.Rmd)
+```{r}
+for(i in c("BL", "EA"))
+{
+  for(k in c("16S", "18S"))
+  {
+    # Read in both size fraction tables
+    big_df <- read.table(paste(PATH, "1_Data/", i, "_3.200_", k, "_abundances_rareASV_filtering.tsv", sep=""), header=TRUE, sep="\t")
+    small_df <- read.table(paste(PATH, "1_Data/", i, "_022.3_", k, "_abundances_rareASV_filtering.tsv", sep=""), header=TRUE, sep="\t")
+    
+    # Perform size fraction filtering
+    big_df$ASV <- gsub("_3.200", "", big_df$ASV)
+    small_df$ASV <- gsub("_022.3", "", small_df$ASV)
+    big_df$abundancesum_big <- rowSums(big_df[, -1])
+    small_df$abundancesum_small <- rowSums(small_df[, -1])
+    
+    sizefractionfilter <- merge(small_df[, c("ASV", "abundancesum_small")], big_df[, c("ASV", "abundancesum_big")], by="ASV")
+    sizefractionfilter$big_dividedby_small <- sizefractionfilter$abundancesum_big / sizefractionfilter$abundancesum_small
+    
+    # Size filtering based on ratio thresholds
+    big_df_filtered <- big_df
+    small_df_filtered <- small_df
+    
+    big_df_filtered[big_df_filtered$ASV %in% sizefractionfilter$ASV[sizefractionfilter$big_dividedby_small < 0.5], -1] <- 0
+    small_df_filtered[small_df_filtered$ASV %in% sizefractionfilter$ASV[sizefractionfilter$big_dividedby_small > 2], -1] <- 0
+    
+    big_df_filtered <- big_df_filtered[rowSums(big_df_filtered[, -1]) > 0, ]
+    small_df_filtered <- small_df_filtered[rowSums(small_df_filtered[, -1]) > 0, ]
+    
+    # Overview of ASVs removed
+    big_removed <- nrow(sizefractionfilter[sizefractionfilter$big_dividedby_small < 0.5, ])
+    small_removed <- nrow(sizefractionfilter[sizefractionfilter$big_dividedby_small > 2, ])
+    
+    cat("Overview of ASV removal in ", i, " + ", k, ":\n")
+    cat("ASVs removed from big size fraction (<0.5):", big_removed, "\n")
+    cat("ASVs remaining in big size fraction:", dim(big_df_filtered)[1], "\n")
+    cat("ASVs removed from small size fraction (>2):", small_removed, "\n")
+    cat("ASVs remaining in small size fraction:", dim(small_df_filtered)[1], "\n")
+    
+    # Save filtered tables
+    write.table(
+      big_df_filtered, 
+      paste(PATH, "1_Data/", i, "_3.200_", k, "_abundances_rareASVandSizeFraction_filtering.tsv", sep=""), 
+      col.names=TRUE, row.names=FALSE, sep="\t", quote=FALSE
+    )
+    
+    write.table(
+      small_df_filtered, 
+      paste(PATH, "1_Data/", i, "_022.3_", k, "_abundances_rareASVandSizeFraction_filtering.tsv", sep=""), 
+      col.names=TRUE, row.names=FALSE, sep="\t", quote=FALSE
+    )
+  }
+}
+```
+
+Overview of ASV removal in  BL  +  16S :
+ASVs removed from big size fraction (<0.5): 239 
+ASVs remaining in big size fraction: 175 
+ASVs removed from small size fraction (>2): 19 
+ASVs remaining in small size fraction: 778 
+
+Overview of ASV removal in  BL  +  18S :
+ASVs removed from big size fraction (<0.5): 146 
+ASVs remaining in big size fraction: 544 
+ASVs removed from small size fraction (>2): 43 
+ASVs remaining in small size fraction: 534 
+
+Overview of ASV removal in  EA  +  16S :
+ASVs removed from big size fraction (<0.5): 117 
+ASVs remaining in big size fraction: 140 
+ASVs removed from small size fraction (>2): 14 
+ASVs remaining in small size fraction: 564 
+
+Overview of ASV removal in  EA  +  18S :
+ASVs removed from big size fraction (<0.5): 339 
+ASVs remaining in big size fraction: 775 
+ASVs removed from small size fraction (>2): 208 
+ASVs remaining in small size fraction: 1088 
+
+- clr transformation + save file (each table)
+```{r}
+# Function to compute Central log ratio transformation and return result as a vector
+my_clr <- function(x) {as.vector(clr(x))}
+pseudo_count <- 1
+
+for(i in c("BL", "EA"))
+{
+  for(j in c("022.3", "3.200"))
+  {
+    for(k in c("16S", "18S"))
+    {
+      ## Read in table
+      dt <- read.table(paste(PATH, "1_Data/", i, "_", j, "_", k, "_abundances_rareASVandSizeFraction_filtering.tsv", sep=""), header=TRUE, sep="\t")
+      dt$abundancesum_big <- NULL
+      dt$abundancesum_small <- NULL
+
+      ## Add pseudo count of 1 and Central log ratio transformation
+      ASV_names <- dt$ASV
+      dt$ASV <- NULL
+      dt_temp_clr <- dplyr::mutate_at((dt + pseudo_count), colnames(dt), my_clr)
+      dt_temp_clr$ASV <- ASV_names
+      dt_temp_clr <- dt_temp_clr[,sort(colnames(dt_temp_clr))]
+      write.table(dt_temp_clr, paste(PATH,"1_Data/",i,"_", j, "_", k, "_clr.tsv", sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+    }
+  }
+}
+```
+
+- merge tables that are already filtered and clr transformed + save file
+```{r}
+for(i in c("BL", "EA"))
+{
+  if(i=="BL"){
+    col_names <- c("ASV",BL_intersection)
+  }else{
+    col_names <- c("ASV",EA_intersection)
+  }
+  dt_022_3_16S <- read.table(paste(PATH,"1_Data/",i,"_022.3_16S_clr.tsv", sep=""), header = TRUE, sep = "\t")
+  dt_022_3_16S$ASV <- gsub("_16S", "_16S_022_3", dt_022_3_16S$ASV)
+  global_min <- min(dt_022_3_16S[,-1])
+  
+  dt_022_3_18S <- read.table(paste(PATH,"1_Data/",i,"_022.3_18S_clr.tsv", sep=""), header = TRUE, sep = "\t")
+  dt_022_3_18S$ASV <- gsub("_18S", "_18S_022_3", dt_022_3_18S$ASV)
+  if(global_min > min(dt_022_3_18S[,-1])){
+    global_min <- min(dt_022_3_18S[,-1])
+  }
+  
+  dt_3_200_16S <- read.table(paste(PATH,"1_Data/",i,"_3.200_16S_clr.tsv", sep=""), header = TRUE, sep = "\t")
+  dt_3_200_16S$ASV <- gsub("_16S", "_16S_3_200", dt_3_200_16S$ASV)
+  if(global_min > min(dt_3_200_16S[,-1])){
+    global_min <- min(dt_3_200_16S[,-1])
+  }
+  
+  dt_3_200_18S <- read.table(paste(PATH,"1_Data/",i,"_3.200_18S_clr.tsv", sep=""), header = TRUE, sep = "\t")
+  dt_3_200_18S$ASV <- gsub("_18S", "_18S_3_200", dt_3_200_18S$ASV)
+  if(global_min > min(dt_3_200_18S[,-1])){
+    global_min <- min(dt_3_200_18S[,-1])
+  }
+  
+  # Every local min (showing where zero was) will be set to the global min
+  for(j in c(2:dim(dt_022_3_16S)[2]))
+  {
+    col_min = min(dt_022_3_16S[,j])
+    dt_022_3_16S[which(dt_022_3_16S[,j]==col_min),j] <- global_min
+  }
+  for(j in c(2:dim(dt_022_3_18S)[2]))
+  {
+    col_min = min(dt_022_3_18S[,j])
+    dt_022_3_18S[which(dt_022_3_18S[,j]==col_min),j] <- global_min
+  }
+  for(j in c(2:dim(dt_3_200_16S)[2]))
+  {
+    col_min = min(dt_3_200_16S[,j])
+    dt_3_200_16S[which(dt_3_200_16S[,j]==col_min),j] <- global_min
+  }
+  for(j in c(2:dim(dt_3_200_18S)[2]))
+  {
+    col_min = min(dt_3_200_18S[,j])
+    dt_3_200_18S[which(dt_3_200_18S[,j]==col_min),j] <- global_min
+  }
+  
+  # Write tables
+  ## One network per dataset (BL and EA), i.e., we merge kingdom (166S and 18S) and size fraction (022_3 and 3_200)
+  write.table(rbind(dt_022_3_16S[,col_names], dt_022_3_18S[,col_names], dt_3_200_16S[,col_names], dt_3_200_18S[,col_names]),
+              paste(PATH,"1_Data/",i,"_table_for_network_construction.tsv",sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+}
+```
+
+## 2. Network inference
+
+### 2.1. Network construction with FlashWeave
+- Programming Language: julia version 1.10.5 (2024-08-27)
+- FlashWeave to infer single static network (Version: FlashWeave v0.19.2)
+- normalize=false because we already applied clr-transformation in order to merge data tables
+- n_obs_min=3 because we require at least 3 observations
+- make sure you are in folder "2_Networks/"
+```{Julia}
+import Pkg; Pkg.add("FlashWeave")
+using FlashWeave
+pkgs = Pkg.installed();
+pkgs["FlashWeave"]
+
+# BL
+file_name="../1_Data/BL_table_for_network_construction.tsv"
+netw_results = learn_network(file_name, sensitive=true, heterogeneous=true, normalize=false, transposed=true, n_obs_min=3)
+save_network(replace(replace(file_name, "1_Data" => "2_Networks"), "table_for_network_construction.tsv" => "FlashWeave_network.edgelist"), netw_results)
+
+# EA
+file_name="../1_Data/EA_table_for_network_construction.tsv"
+netw_results = learn_network(file_name, sensitive=true, heterogeneous=true, normalize=false, transposed=true, n_obs_min=3)
+save_network(replace(replace(file_name, "1_Data" => "2_Networks"), "table_for_network_construction.tsv" => "FlashWeave_network.edgelist"), netw_results)
+```
+
+Output network construction BL
+```
+> netw_results = learn_network(file_name, sensitive=true, heterogeneous=true, normalize=false, transposed=true, n_obs_min=3)
+
+### Loading data ###
+
+┌ Warning: Skipping normalization, only experts should choose this option
+└ @ FlashWeave ~/.julia/packages/FlashWeave/j91Ng/src/learning.jl:508
+### Learning interactions ###
+
+Inferring network with FlashWeaveHE - sensitive (conditional)
+
+	Run information:
+	sensitive - true
+	heterogeneous - true
+	max_k - 3
+	alpha - 0.01
+	sparse - true
+	workers - 1
+	OTUs - 2031
+	MVs - 0
+
+Computing univariate associations
+
+Univariate degree stats:
+Summary Stats:
+Length:         2031
+Missing Count:  0
+Mean:           32.129985
+Minimum:        0.000000
+1st Quartile:   4.000000
+Median:         18.000000
+3rd Quartile:   42.000000
+Maximum:        202.000000
+
+
+
+Starting conditioning search
+
+Preparing workers..
+
+Done. Starting inference..
+Starting convergence checks at 2347 edges.
+Latest convergence step change: 0.93904
+Latest convergence step change: 0.32367
+
+Postprocessing
+Complete
+
+Finished inference. Total time taken: 6.483s
+
+Mode:
+FlashWeaveHE - sensitive (conditional)
+
+Network:
+2660 interactions between 2031 variables (2031 OTUs and 0 MVs)
+
+Unfinished variables:
+none
+
+Rejections:
+not tracked
+```
+
+Output network construction EA
+```
+> netw_results = learn_network(file_name, sensitive=true, heterogeneous=true, normalize=false, transposed=true, n_obs_min=3)
+
+### Loading data ###
+
+┌ Warning: Skipping normalization, only experts should choose this option
+└ @ FlashWeave ~/.julia/packages/FlashWeave/j91Ng/src/learning.jl:508
+### Learning interactions ###
+
+Inferring network with FlashWeaveHE - sensitive (conditional)
+
+	Run information:
+	sensitive - true
+	heterogeneous - true
+	max_k - 3
+	alpha - 0.01
+	sparse - true
+	workers - 1
+	OTUs - 2567
+	MVs - 0
+
+Computing univariate associations
+
+Univariate degree stats:
+Summary Stats:
+Length:         2567
+Missing Count:  0
+Mean:           12.508765
+Minimum:        0.000000
+1st Quartile:   1.000000
+Median:         3.000000
+3rd Quartile:   9.000000
+Maximum:        187.000000
+
+
+
+Starting conditioning search
+
+Preparing workers..
+
+Done. Starting inference..
+Starting convergence checks at 2026 edges.
+Latest convergence step change: 0.35537
+Latest convergence step change: 0.26245
+Latest convergence step change: 0.2684
+Latest convergence step change: 0.21204
+Latest convergence step change: 0.22998
+Latest convergence step change: 0.20091
+Latest convergence step change: 0.19861
+
+Postprocessing
+Complete
+
+Finished inference. Total time taken: 1.379s
+
+Mode:
+FlashWeaveHE - sensitive (conditional)
+
+Network:
+2435 interactions between 2567 variables (2567 OTUs and 0 MVs)
+
+Unfinished variables:
+none
+
+Rejections:
+not tracked
+```
+
+=====> To keep in mind:
+---> different number of samples
+----> difficult/biased to compare networks because number of samples was not equal and it can bias network construction
+-> However, 20 vs. 23 is similar!
+
+- Number nodes with at least one edge (not considering isolated nodes)
+```{r}
+for(i in c("BL", "EA"))
+{
+  # Read in network
+  nw <- read.table(paste(PATH,"2_Networks/", i, "_FlashWeave_network.edgelist", sep=""), header = FALSE, sep = "\t")
+  
+  # Rename columns in nw
+  colnames(nw) <- c("Source", "Target", "association_score")
+  
+  # Combine node1 and node2, then find unique nodes
+  all_nodes <- unique(c(nw$Source, nw$Target))
+  
+  # Print or save the results
+  print(i)
+  print(paste("#All nodes: ", length(all_nodes), sep=""))
+  print(paste("#Nodes with 16S_022_3: ", length(all_nodes[grepl("16S_022_3", all_nodes)]), sep=""))
+  print(paste("#Nodes with 16S_3_200: ", length(all_nodes[grepl("16S_3_200", all_nodes)]), sep=""))
+  print(paste("#Nodes with 18S_022_3: ", length(all_nodes[grepl("18S_022_3", all_nodes)]), sep=""))
+  print(paste("#Nodes with 18S_3_200: ", length(all_nodes[grepl("18S_3_200", all_nodes)]), sep=""))
+  
+  # Write table
+  write.table(all_nodes, paste(PATH,"2_Networks/", i, "_all_nodes.txt", sep=""), col.names = FALSE, row.names = FALSE, quote = FALSE, sep = "\t")
+  write.table(nw, paste(PATH,"2_Networks/", i, "_FlashWeave_network.tsv", sep=""), col.names = TRUE, row.names = FALSE, quote = FALSE, sep = "\t") 
+}
+```
+[1] "BL"
+[1] "#All nodes: 1914"
+[1] "#Nodes with 16S_022_3: 756"
+[1] "#Nodes with 16S_3_200: 159"
+[1] "#Nodes with 18S_022_3: 468"
+[1] "#Nodes with 18S_3_200: 531"
+
+[1] "EA"
+[1] "#All nodes: 2099"
+[1] "#Nodes with 16S_022_3: 413"
+[1] "#Nodes with 16S_3_200: 87"
+[1] "#Nodes with 18S_022_3: 920"
+[1] "#Nodes with 18S_3_200: 679"
+
+### 2.2. Removing environmental edges with EnDED
+- download EnDED (https://github.com/InaMariaDeutschmann/EnDED)
+- on Mac in terminal
+```{bash}
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+brew install gcc cmake
+brew install boost
+```
+
+- added in EnDED makefile: "-I/opt/homebrew/opt/boost/include" in CXXFLAGS
+```
+CXXFLAGS := -std=c++11 -O3 -I/opt/homebrew/opt/boost/include
+```
+
+- prepare ASV abundance tables
+```{r}
+for(i in c("BL", "EA"))
+{
+  if(i=="BL"){
+    col_names <- c("ASV",BL_intersection)
+  }else{
+    col_names <- c("ASV",EA_intersection)
+  }
+  dt_022_3_16S <- read.table(paste(PATH,"1_Data/",i,"_022.3_16S_abundances_rareASVandSizeFraction_filtering.tsv", sep=""), header = TRUE, sep = "\t")
+  dt_022_3_16S$ASV <- gsub("_16S", "_16S_022_3", dt_022_3_16S$ASV)
+  dt_022_3_18S <- read.table(paste(PATH,"1_Data/",i,"_022.3_18S_abundances_rareASVandSizeFraction_filtering.tsv", sep=""), header = TRUE, sep = "\t")
+  dt_022_3_18S$ASV <- gsub("_18S", "_18S_022_3", dt_022_3_18S$ASV)
+  dt_3_200_16S <- read.table(paste(PATH,"1_Data/",i,"_3.200_16S_abundances_rareASVandSizeFraction_filtering.tsv", sep=""), header = TRUE, sep = "\t")
+  dt_3_200_16S$ASV <- gsub("_16S", "_16S_3_200", dt_3_200_16S$ASV)
+  dt_3_200_18S <- read.table(paste(PATH,"1_Data/",i,"_3.200_18S_abundances_rareASVandSizeFraction_filtering.tsv", sep=""), header = TRUE, sep = "\t")
+  dt_3_200_18S$ASV <- gsub("_18S", "_18S_3_200", dt_3_200_18S$ASV)
+
+  # Write tables
+  ## One network per dataset (BL and EA), i.e., we merge kingdom (166S and 18S) and size fraction (022_3 and 3_200)
+  write.table(rbind(dt_022_3_16S[,col_names], dt_022_3_18S[,col_names], dt_3_200_16S[,col_names], dt_3_200_18S[,col_names]),
+              paste(PATH,"2_Networks/",i,"_ASV_table_for_EnDED.tsv",sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+}
+```
+
+- prepare ENV data
+- reduce ENV table to considered variables
+- check if ENV contains all stations
+```{r}
+# Read in the ENV table
+dt <- read.csv(paste(PATH, file_ENV, sep=""), header = TRUE)
+
+# Define the ENV parameters to consider
+ENV_IDs <- c("daylength", "Temperature", "Salinity", "NH4", "NO2", "NO3", "PO4", "Si")
+
+# Subset the ENV table to include only relevant columns
+if (!all(ENV_IDs %in% colnames(dt))) {
+  stop("Error: Some ENV_IDs are not found in the ENV file.")
+}
+
+dt <- dt[, c("SampleID", ENV_IDs)]
+
+# Standardize the SampleID column to match the ASV table format
+dt$SampleID <- gsub("-", ".", dt$SampleID)
+
+# Transpose the data: rows become columns and columns become rows
+dt_t <- t(dt[, -1])  # Exclude SampleID column for transposing
+colnames(dt_t) <- dt$SampleID  # Set new column names as SampleID values
+dt_t <- as.data.frame(dt_t, stringsAsFactors = FALSE)  # Convert to data frame
+dt_t$ENV_ID <- rownames(dt_t)  # Add the ENV_ID column
+rownames(dt_t) <- NULL  # Reset row names
+
+# Rearrange columns to have ENV_ID as the first column
+dt_t <- dt_t[, c("ENV_ID", setdiff(names(dt_t), "ENV_ID"))]
+
+# Save the transposed table
+write.table(
+  dt_t, 
+  paste(PATH, "1_Data/ENV_allSamples_transposed.tsv", sep=""), 
+  col.names = TRUE, 
+  row.names = FALSE, 
+  sep = "\t", 
+  quote = FALSE
+)
+
+# BL
+# Read in the ASV table
+ASV <- read.table(paste(PATH, "2_Networks/BL_ASV_table_for_EnDED.tsv", sep=""), sep="\t", header = TRUE)
+
+# Keep only columns present in the ASV table
+common_columns <- intersect(names(dt_t), colnames(ASV))
+dt_t_BL <- dt_t[, c("ENV_ID", common_columns)]
+
+# Rename the first column to "ASV"
+colnames(dt_t_BL)[1] <- "ASV"
+dt_t_BL$ASV <- paste("ENV", dt_t_BL$ASV, sep="_")
+
+# Save table
+write.table(
+  dt_t_BL, 
+  paste(PATH, "2_Networks/BL_ENV.tsv", sep=""), 
+  col.names = TRUE, 
+  row.names = FALSE, 
+  sep = "\t", 
+  quote = FALSE
+)
+
+# EA
+# Read in the ASV table
+ASV <- read.table(paste(PATH, "2_Networks/EA_ASV_table_for_EnDED.tsv", sep=""), sep="\t", header = TRUE)
+
+# Keep only columns present in the ASV table
+common_columns <- intersect(names(dt_t), colnames(ASV))
+dt_t_EA <- dt_t[, c("ENV_ID", common_columns)]
+
+# Rename the first column to "ASV"
+colnames(dt_t_EA)[1] <- "ASV"
+dt_t_EA$ASV <- paste("ENV", dt_t_EA$ASV, sep="_")
+
+# Save table
+write.table(
+  dt_t_EA, 
+  paste(PATH, "2_Networks/EA_ENV.tsv", sep=""), 
+  col.names = TRUE, 
+  row.names = FALSE, 
+  sep = "\t", 
+  quote = FALSE
+)
+```
+-> ENV table contains all needed samples
+
+- prepare ASV-ENV edges
+```{r}
+ENV <- read.table(paste(PATH,"/1_Data/ENV_allSamples.tsv",sep=""), header = TRUE)
+
+# BL
+nodes <- read.table(paste(PATH,"/2_Networks/BL_all_nodes.txt",sep=""), header = FALSE)
+ENV_IDs <- c("daylength", "Temperature", "Salinity", "NH4", "NO2", "NO3", "PO4", "Si")
+for(e in ENV_IDs)
+{
+  dt_temp <- data.frame(Source=nodes, Target=paste("ENV", e, sep="_"), association_score=1)
+  write.table(dt_temp, paste(PATH,"2_Networks/BL_ASV_",e,".txt",sep=""),
+              col.names = TRUE, row.names = FALSE, sep ="\t", quote = FALSE)
+}
+
+# EA
+nodes <- read.table(paste(PATH,"/2_Networks/EA_all_nodes.txt",sep=""), header = FALSE)
+ENV_IDs <- c("daylength", "Temperature", "Salinity", "NH4", "NO2", "NO3", "PO4", "Si")
+for(e in ENV_IDs)
+{
+  dt_temp <- data.frame(Source=nodes, Target=paste("ENV", e, sep="_"), association_score=1)
+  write.table(dt_temp, paste(PATH,"2_Networks/EA_ASV_",e,".txt",sep=""),
+              col.names = TRUE, row.names = FALSE, sep ="\t", quote = FALSE)
+}
+```
+
+- EnDED on BL network and EA network
+```{bash}
+bash EnDED_BL.sh
+bash EnDED_EA.sh
+```
+
+- BL network: combining EnDED results
+```{r}
+NW <- read.table(paste(PATH,"/2_Networks/BL_FlashWeave_network.tsv",sep=""), header = TRUE)
+NW$original <- 1
+dt_temp <- read.table(paste(PATH,"/2_Networks/BL_NW_ENV_daylength.tsv",sep=""), header = TRUE)
+NW <- merge(NW, dt_temp[-grep("ENV",dt_temp$Target),c("Source", "Target", "MutualInformation", "InterationInformation", "II_p_value", "DataProcessingInequality_MI_rank", "COMBI_II_DPI")], by=c("Source","Target"), all=TRUE)
+colnames(NW)[which(colnames(NW)=="InterationInformation")] <- "ENV_daylength_InterationInformation"
+colnames(NW)[which(colnames(NW)=="II_p_value")] <- "ENV_daylength_II_p_value"
+colnames(NW)[which(colnames(NW)=="DataProcessingInequality_MI_rank")] <- "ENV_daylength_DataProcessingInequality_MI_rank"
+colnames(NW)[which(colnames(NW)=="COMBI_II_DPI")] <- "ENV_daylength_COMBI_II_DPI"
+
+for(i in c("Temperature", "Salinity", "NH4", "NO2", "NO3", "PO4", "Si"))
+{
+  filename <- paste(PATH,"/2_Networks/BL_NW_ENV_",i,".tsv",sep="")
+  dt_temp <- read.table(filename, header = TRUE)
+  
+  NW <- merge(NW, dt_temp[-grep("ENV",dt_temp$Target),c("Source", "Target", "InterationInformation", "II_p_value", "DataProcessingInequality_MI_rank", "COMBI_II_DPI")], by=c("Source","Target"), all=TRUE)
+  colnames(NW)[which(colnames(NW)=="InterationInformation")] <- paste("ENV_",i,"_InterationInformation",sep="")
+  colnames(NW)[which(colnames(NW)=="II_p_value")] <- paste("ENV_",i,"_II_p_value",sep="")
+  colnames(NW)[which(colnames(NW)=="DataProcessingInequality_MI_rank")] <- paste("ENV_",i,"_DataProcessingInequality_MI_rank",sep="")
+  colnames(NW)[which(colnames(NW)=="COMBI_II_DPI")] <- paste("ENV_",i,"_COMBI_II_DPI",sep="")
+}
+
+NW$COMBI_allENV <- rowSums(NW[,grep("COMBI",colnames(NW))])
+NW_BL <- NW
+```
+
+- EA network: combining EnDED results
+```{r}
+NW <- read.table(paste(PATH,"/2_Networks/EA_FlashWeave_network.tsv",sep=""), header = TRUE)
+NW$original <- 1
+dt_temp <- read.table(paste(PATH,"/2_Networks/EA_NW_ENV_daylength.tsv",sep=""), header = TRUE)
+NW <- merge(NW, dt_temp[-grep("ENV",dt_temp$Target),c("Source", "Target", "MutualInformation", "InterationInformation", "II_p_value", "DataProcessingInequality_MI_rank", "COMBI_II_DPI")], by=c("Source","Target"), all=TRUE)
+colnames(NW)[which(colnames(NW)=="InterationInformation")] <- "ENV_daylength_InterationInformation"
+colnames(NW)[which(colnames(NW)=="II_p_value")] <- "ENV_daylength_II_p_value"
+colnames(NW)[which(colnames(NW)=="DataProcessingInequality_MI_rank")] <- "ENV_daylength_DataProcessingInequality_MI_rank"
+colnames(NW)[which(colnames(NW)=="COMBI_II_DPI")] <- "ENV_daylength_COMBI_II_DPI"
+
+for(i in c("Temperature", "Salinity", "NH4", "NO2", "NO3", "PO4", "Si"))
+{
+  filename <- paste(PATH,"/2_Networks/EA_NW_ENV_",i,".tsv",sep="")
+  dt_temp <- read.table(filename, header = TRUE)
+  
+  NW <- merge(NW, dt_temp[-grep("ENV",dt_temp$Target),c("Source", "Target", "InterationInformation", "II_p_value", "DataProcessingInequality_MI_rank", "COMBI_II_DPI")], by=c("Source","Target"), all=TRUE)
+  colnames(NW)[which(colnames(NW)=="InterationInformation")] <- paste("ENV_",i,"_InterationInformation",sep="")
+  colnames(NW)[which(colnames(NW)=="II_p_value")] <- paste("ENV_",i,"_II_p_value",sep="")
+  colnames(NW)[which(colnames(NW)=="DataProcessingInequality_MI_rank")] <- paste("ENV_",i,"_DataProcessingInequality_MI_rank",sep="")
+  colnames(NW)[which(colnames(NW)=="COMBI_II_DPI")] <- paste("ENV_",i,"_COMBI_II_DPI",sep="")
+}
+
+NW$COMBI_allENV <- rowSums(NW[,grep("COMBI",colnames(NW))])
+NW_EA <- NW
+```
+
+- Overview
+```{r}
+print("BL")
+print("all edges")
+table(NW_BL$COMBI_allENV)
+print("positive edges")
+table(NW_BL$COMBI_allENV[which(NW_BL$association_score>0)])
+print("negative edges")
+table(NW_BL$COMBI_allENV[which(NW_BL$association_score<0)])
+
+print("EA")
+print("all edges")
+table(NW_EA$COMBI_allENV)
+print("positive edges")
+table(NW_EA$COMBI_allENV[which(NW_EA$association_score>0)])
+print("negative edges")
+table(NW_EA$COMBI_allENV[which(NW_EA$association_score<0)])
+```
+[1] "BL"
+[1] "all edges"
+
+   7    8 
+   6 2654 
+[1] "positive edges"
+
+   7    8 
+   2 2393 
+[1] "negative edges"
+
+  7   8 
+  4 261 
+
+6 edges were kept by 7 ENV, i.e. removed by 1 (2 pos and 4 neg)
+2654 edges were kept by 8 ENV, i.e. removed by none (2393 pos and 261 neg)
+
+[1] "EA"
+[1] "all edges"
+
+   6    7    8 
+   1   13 2421 
+[1] "positive edges"
+
+   7    8 
+   5 2068 
+[1] "negative edges"
+
+  6   7   8 
+  1   8 353 
+
+1 edge was kept by 6 ENV, i.e. removed by 2 (0 pos and 1 neg)
+13 edges were kept by 7 ENV, i.e. removed by 1 (5 pos and 8 neg)
+2421 edges were kept by 8 ENV, i.e. removed by none (2068 pos and 353 neg)
+
+```{r}
+print("BL")
+paste(length(which(NW_BL$COMBI_allENV==8)), " (", length(which(NW_BL$COMBI_allENV==8))/dim(NW_BL)[1]*100, "%) edges were kept in network")
+paste(length(which(NW_BL$COMBI_allENV<8)), " (", length(which(NW_BL$COMBI_allENV<8))/dim(NW_BL)[1]*100, "%) edges were removed from the network")
+
+print("EA")
+paste(length(which(NW_EA$COMBI_allENV==8)), " (", length(which(NW_EA$COMBI_allENV==8))/dim(NW_EA)[1]*100, "%) edges were kept in network")
+paste(length(which(NW_EA$COMBI_allENV<8)), " (", length(which(NW_EA$COMBI_allENV<8))/dim(NW_EA)[1]*100, "%) edges were removed from the network")
+```
+[1] "BL"
+[1] "2654  ( 99.7744360902256 %) edges were kept in network"
+[1] "6  ( 0.225563909774436 %) edges were removed from the network"
+[1] "EA"
+[1] "2421  ( 99.4250513347023 %) edges were kept in network"
+[1] "14  ( 0.574948665297741 %) edges were removed from the network"
+
+Who was responsible for edge removal?
+```{r}
+print("BL")
+for (i in c("daylength", "Temperature", "Salinity", "NH4", "NO2", "NO3", "PO4", "Si")) {
+  # Dynamically construct the column name
+  column_name <- paste0("ENV_", i, "_COMBI_II_DPI")
+  
+  # Check if the column exists in NW_BL
+  if (column_name %in% colnames(NW_BL)) {
+    # Calculate counts and percentages
+    zero_count <- length(which(NW_BL[[column_name]] == 0))
+    total_rows <- nrow(NW_BL)
+    percentage <- (zero_count / total_rows) * 100
+    
+    # Print the results
+    print(paste(
+      i, ": ",
+      zero_count, 
+      " (", round(percentage, 2), "%) ",
+      sep = ""
+    ))
+  } else {
+    # Print warning if the column doesn't exist
+    print(paste("Column", column_name, "not found in NW_BL"))
+  }
+}
+
+print("EA")
+for (i in c("daylength", "Temperature", "Salinity", "NH4", "NO2", "NO3", "PO4", "Si")) {
+  # Dynamically construct the column name
+  column_name <- paste0("ENV_", i, "_COMBI_II_DPI")
+  
+  # Check if the column exists in NW_EA
+  if (column_name %in% colnames(NW_EA)) {
+    # Calculate counts and percentages
+    zero_count <- length(which(NW_EA[[column_name]] == 0))
+    total_rows <- nrow(NW_EA)
+    percentage <- (zero_count / total_rows) * 100
+    
+    # Print the results
+    print(paste(
+      i, ": ",
+      zero_count, 
+      " (", round(percentage, 2), "%) ",
+      sep = ""
+    ))
+  } else {
+    # Print warning if the column doesn't exist
+    print(paste("Column", column_name, "not found in NW_EA"))
+  }
+}
+```
+[1] "BL"
+[1] "daylength: 0 (0%) "
+[1] "Temperature: 0 (0%) "
+[1] "Salinity: 0 (0%) "
+[1] "NH4: 0 (0%) "
+[1] "NO2: 3 (0.11%) "
+[1] "NO3: 1 (0.04%) "
+[1] "PO4: 1 (0.04%) "
+[1] "Si: 1 (0.04%) "
+
+[1] "EA"
+[1] "daylength: 0 (0%) "
+[1] "Temperature: 0 (0%) "
+[1] "Salinity: 0 (0%) "
+[1] "NH4: 4 (0.16%) "
+[1] "NO2: 2 (0.08%) "
+[1] "NO3: 2 (0.08%) "
+[1] "PO4: 1 (0.04%) "
+[1] "Si: 6 (0.25%) "
+
+Filtering out environmentally-driven edges from network
+```{r}
+# BL
+print("BL")
+NW <- NW_BL
+
+# Filter the network based on the condition
+NW_filtered <- NW[which(NW$COMBI_allENV == 8),]
+
+# Total number of unique nodes
+total_nodes <- length(unique(c(as.character(NW$Source), as.character(NW$Target))))
+filtered_nodes <- length(unique(c(as.character(NW_filtered$Source), as.character(NW_filtered$Target))))
+
+# Total edges before and after filtering
+total_edges_before <- dim(NW)[1]
+total_edges_after <- dim(NW_filtered)[1]
+
+# Positive and negative edge counts before filtering
+positive_before <- length(which(NW$association_score > 0))
+negative_before <- length(which(NW$association_score < 0))
+positive_before_percent <- (positive_before / total_edges_before) * 100
+negative_before_percent <- (negative_before / total_edges_before) * 100
+
+# Positive and negative edge counts after filtering
+positive_after <- length(which(NW_filtered$association_score > 0))
+negative_after <- length(which(NW_filtered$association_score < 0))
+positive_after_percent <- (positive_after / total_edges_after) * 100
+negative_after_percent <- (negative_after / total_edges_after) * 100
+
+# Print the results in the required format
+cat("-> Before EnDED:", total_nodes, "nodes\n")
+cat("-> After EnDED:", filtered_nodes, "nodes\n")
+cat("-> Before EnDED: ", total_edges_before, " edges (", positive_before, ", ", 
+    round(positive_before_percent, 2), "% positive, and ", 
+    negative_before, ", ", round(negative_before_percent, 2), "% negative)\n", sep = "")
+cat("-> After EnDED: ", total_edges_after, " edges (", positive_after, ", ", 
+    round(positive_after_percent, 2), "% positive, and ", 
+    negative_after, ", ", round(negative_after_percent, 2), "% negative)\n", sep = "")
+
+NW_filtered_BL <- NW_filtered
+
+# EA
+print("EA")
+NW <- NW_EA
+
+# Filter the network based on the condition
+NW_filtered <- NW[which(NW$COMBI_allENV == 8),]
+
+# Total number of unique nodes
+total_nodes <- length(unique(c(as.character(NW$Source), as.character(NW$Target))))
+filtered_nodes <- length(unique(c(as.character(NW_filtered$Source), as.character(NW_filtered$Target))))
+
+# Total edges before and after filtering
+total_edges_before <- dim(NW)[1]
+total_edges_after <- dim(NW_filtered)[1]
+
+# Positive and negative edge counts before filtering
+positive_before <- length(which(NW$association_score > 0))
+negative_before <- length(which(NW$association_score < 0))
+positive_before_percent <- (positive_before / total_edges_before) * 100
+negative_before_percent <- (negative_before / total_edges_before) * 100
+
+# Positive and negative edge counts after filtering
+positive_after <- length(which(NW_filtered$association_score > 0))
+negative_after <- length(which(NW_filtered$association_score < 0))
+positive_after_percent <- (positive_after / total_edges_after) * 100
+negative_after_percent <- (negative_after / total_edges_after) * 100
+
+# Print the results in the required format
+cat("-> Before EnDED:", total_nodes, "nodes\n")
+cat("-> After EnDED:", filtered_nodes, "nodes\n")
+cat("-> Before EnDED: ", total_edges_before, " edges (", positive_before, ", ", 
+    round(positive_before_percent, 2), "% positive, and ", 
+    negative_before, ", ", round(negative_before_percent, 2), "% negative)\n", sep = "")
+cat("-> After EnDED: ", total_edges_after, " edges (", positive_after, ", ", 
+    round(positive_after_percent, 2), "% positive, and ", 
+    negative_after, ", ", round(negative_after_percent, 2), "% negative)\n", sep = "")
+
+NW_filtered_EA <- NW_filtered
+```
+[1] "BL"
+-> Before EnDED: 1914 nodes
+-> After EnDED: 1913 nodes
+-> Before EnDED: 2660 edges (2395, 90.04% positive, and 265, 9.96% negative)
+-> After EnDED: 2654 edges (2393, 90.17% positive, and 261, 9.83% negative)
+
+[1] "EA"
+-> Before EnDED: 2099 nodes
+-> After EnDED: 2091 nodes
+-> Before EnDED: 2435 edges (2073, 85.13% positive, and 362, 14.87% negative)
+-> After EnDED: 2421 edges (2068, 85.42% positive, and 353, 14.58% negative)
+
+Save tables
+```{r}
+write.table(NW_BL,
+            paste(PATH,"/2_Networks/BL_NW_withEnDED.tsv",sep=""),
+            col.names = TRUE, row.names = FALSE, sep = "\t", dec = ".", quote = FALSE)
+write.table(NW_filtered_BL[,c("Source","Target","association_score","MutualInformation")],
+            paste(PATH,"/2_Networks/BL_NW_afterEnDED.tsv",sep=""),
+            col.names = TRUE, row.names = FALSE, sep = "\t", dec = ".", quote = FALSE)
+
+write.table(NW_EA,
+            paste(PATH,"/2_Networks/EA_NW_withEnDED.tsv",sep=""),
+            col.names = TRUE, row.names = FALSE, sep = "\t", dec = ".", quote = FALSE)
+write.table(NW_filtered_EA[,c("Source","Target","association_score","MutualInformation")],
+            paste(PATH,"/2_Networks/EA_NW_afterEnDED.tsv",sep=""),
+            col.names = TRUE, row.names = FALSE, sep = "\t", dec = ".", quote = FALSE)
+```
+
+## Co-occurrence filter
+```{r}
+# BL
+NW_BL <- read.table(paste(PATH,"/2_Networks/BL_NW_afterEnDED.tsv",sep=""), header = TRUE, sep = "\t")
+coOcc <- read.table(paste(PATH,"/2_Networks/BL_NW_CoOcc.tsv",sep=""), header = TRUE, sep = "\t")
+NW_BL <- merge(NW_BL, coOcc[,-3], by=c("Source","Target"), all.x=TRUE, all.y=FALSE)
+
+# EA
+NW_EA <- read.table(paste(PATH,"/2_Networks/EA_NW_afterEnDED.tsv",sep=""), header = TRUE, sep = "\t")
+coOcc <- read.table(paste(PATH,"/2_Networks/EA_NW_CoOcc.tsv",sep=""), header = TRUE, sep = "\t")
+NW_EA <- merge(NW_EA, coOcc[,-3], by=c("Source","Target"), all.x=TRUE, all.y=FALSE)
+```
+
+```{r}
+print("BL")
+NW <- NW_BL
+cat(
+  "Nodes with percentage_co_occurrence > 0.5:", 
+  length(unique(c(as.character(NW[which(NW$percentage_co_occurrence > 0.5), "Source"]), as.character(NW[which(NW$percentage_co_occurrence > 0.5), "Target"])))), 
+  "| All edges:", 
+  length(which(NW$percentage_co_occurrence <= 0.5)), "with percentage_co_occurrence <= 0.5,", 
+  length(which(NW$percentage_co_occurrence > 0.5)), "with percentage_co_occurrence > 0.5 | Positive edges:", 
+  length(which(NW$percentage_co_occurrence <= 0.5 & NW$association_score > 0)), "with percentage_co_occurrence <= 0.5,", 
+  length(which(NW$percentage_co_occurrence > 0.5 & NW$association_score > 0)), "with percentage_co_occurrence > 0.5 | Negative edges:", 
+  length(which(NW$percentage_co_occurrence <= 0.5 & NW$association_score < 0)), "with percentage_co_occurrence <= 0.5,", 
+  length(which(NW$percentage_co_occurrence > 0.5 & NW$association_score < 0)), "with percentage_co_occurrence > 0.5 | % Positive with percentage_co_occurrence > 0.5:", 
+  round(length(which(NW$percentage_co_occurrence > 0.5 & NW$association_score > 0)) / length(which(NW$percentage_co_occurrence > 0.5)) * 100, 2), 
+  "% | % Negative with percentage_co_occurrence > 0.5:", 
+  round(length(which(NW$percentage_co_occurrence > 0.5 & NW$association_score < 0)) / length(which(NW$percentage_co_occurrence > 0.5)) * 100, 2), 
+  "%\n"
+)
+
+print("EA")
+NW <- NW_EA
+cat(
+  "Nodes with percentage_co_occurrence > 0.5:", 
+  length(unique(c(as.character(NW[which(NW$percentage_co_occurrence > 0.5), "Source"]), as.character(NW[which(NW$percentage_co_occurrence > 0.5), "Target"])))), 
+  "| All edges:", 
+  length(which(NW$percentage_co_occurrence <= 0.5)), "with percentage_co_occurrence <= 0.5,", 
+  length(which(NW$percentage_co_occurrence > 0.5)), "with percentage_co_occurrence > 0.5 | Positive edges:", 
+  length(which(NW$percentage_co_occurrence <= 0.5 & NW$association_score > 0)), "with percentage_co_occurrence <= 0.5,", 
+  length(which(NW$percentage_co_occurrence > 0.5 & NW$association_score > 0)), "with percentage_co_occurrence > 0.5 | Negative edges:", 
+  length(which(NW$percentage_co_occurrence <= 0.5 & NW$association_score < 0)), "with percentage_co_occurrence <= 0.5,", 
+  length(which(NW$percentage_co_occurrence > 0.5 & NW$association_score < 0)), "with percentage_co_occurrence > 0.5 | % Positive with percentage_co_occurrence > 0.5:", 
+  round(length(which(NW$percentage_co_occurrence > 0.5 & NW$association_score > 0)) / length(which(NW$percentage_co_occurrence > 0.5)) * 100, 2), 
+  "% | % Negative with percentage_co_occurrence > 0.5:", 
+  round(length(which(NW$percentage_co_occurrence > 0.5 & NW$association_score < 0)) / length(which(NW$percentage_co_occurrence > 0.5)) * 100, 2), 
+  "%\n"
+)
+```
+[1] "BL"
+Nodes with percentage_co_occurrence > 0.5: 1906
+All edges: 40 with percentage_co_occurrence <= 0.5, 2614 with percentage_co_occurrence > 0.5
+Positive edges: 0 with percentage_co_occurrence <= 0.5, 2393 with percentage_co_occurrence > 0.5
+Negative edges: 40 with percentage_co_occurrence <= 0.5, 221 with percentage_co_occurrence > 0.5
+% Positive with percentage_co_occurrence > 0.5: 91.55 %
+% Negative with percentage_co_occurrence > 0.5: 8.45 %
+
+[1] "EA"
+Nodes with percentage_co_occurrence > 0.5: 2074
+All edges: 32 with percentage_co_occurrence <= 0.5, 2389 with percentage_co_occurrence > 0.5
+Positive edges: 0 with percentage_co_occurrence <= 0.5, 2068 with percentage_co_occurrence > 0.5
+Negative edges: 32 with percentage_co_occurrence <= 0.5, 321 with percentage_co_occurrence > 0.5
+% Positive with percentage_co_occurrence > 0.5: 86.56 %
+% Negative with percentage_co_occurrence > 0.5: 13.44 %
+
+```{r}
+# BL
+write.table(NW_BL[which(NW_BL$percentage_co_occurrence>0.5),],
+            paste(PATH,"/2_Networks/BL_NW_static.tsv",sep=""),
+            col.names = TRUE, row.names = FALSE, sep = "\t", dec = ".", quote = FALSE)
+
+# EA
+write.table(NW_EA[which(NW_EA$percentage_co_occurrence>0.5),],
+            paste(PATH,"/2_Networks/EA_NW_static.tsv",sep=""),
+            col.names = TRUE, row.names = FALSE, sep = "\t", dec = ".", quote = FALSE)
+```
+
+### 2.3. Determining temporal network
+- determine temporal network from single static network via subnetworks
+- an edge is present in a monthly subnetwork when both microorganisms of the predicted associations are present (abundance > 0)
+```{r}
+#########################################################
+# BL
+#########################################################
+dt <- read.table(paste(PATH,"2_Networks/BL_ASV_table_for_EnDED.tsv", sep=""), header = TRUE, sep = "\t")
+dt[is.na(dt)] <- 0 # Replace all NA values in the data frame with 0
+global_min <- 0
+rownames(dt) <- dt$ASV
+dt$ASV <- NULL
+NW <- read.table(paste(PATH,"2_Networks/BL_NW_static.tsv", sep=""), header = TRUE, sep = "\t")
+colnames(NW)[1:3] <- c("Source", "Target", "Weight")
+#hist(NW$Weight, breaks = 100)
+for(i in colnames(dt)){
+  NW[,i] <- 1*((dt[NW$Source,i]>global_min) & (dt[NW$Target,i]>global_min))
+}
+write.table(NW, paste(PATH,"2_Networks/BL_temporalNetwork.tsv", sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+
+#########################################################
+# EA
+#########################################################
+dt <- read.table(paste(PATH,"2_Networks/EA_ASV_table_for_EnDED.tsv", sep=""), header = TRUE, sep = "\t")
+dt[is.na(dt)] <- 0 # Replace all NA values in the data frame with 0
+global_min <- 0
+rownames(dt) <- dt$ASV
+dt$ASV <- NULL
+NW <- read.table(paste(PATH,"2_Networks/EA_NW_static.tsv", sep=""), header = TRUE, sep = "\t")
+colnames(NW)[1:3] <- c("Source", "Target", "Weight")
+#hist(NW$Weight, breaks = 100)
+for(i in colnames(dt)){
+  NW[,i] <- 1*((dt[NW$Source,i]>global_min) & (dt[NW$Target,i]>global_min))
+}
+write.table(NW, paste(PATH,"2_Networks/EA_temporalNetwork.tsv", sep=""), col.names = TRUE, row.names = FALSE, sep = "\t", quote = FALSE)
+```
