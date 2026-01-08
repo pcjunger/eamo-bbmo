@@ -104,7 +104,7 @@ Fig1b3<-envdata %>%
 
 ##NO3
 Fig1b4<-envdata %>% 
-  filter(NO3 != "NA") %>% 
+  filter(!is.na(NO3)) %>% 
   ggplot(aes(date,NO3)) + 
   geom_path(aes(color=station))+
   geom_point(aes(color=station))+
@@ -117,7 +117,7 @@ Fig1b4<-envdata %>%
 
 ##PO4
 Fig1b5<-envdata %>%  
-  filter(PO4 != "NA") %>% 
+  filter(!is.na(PO4)) %>% 
   ggplot(aes(date,PO4)) + 
   geom_path(aes(color=station))+
   geom_point(aes(color=station))+
@@ -130,7 +130,7 @@ Fig1b5<-envdata %>%
 
 ##SIO2
 Fig1b6<-envdata %>%  
-  filter(Si != "NA") %>% 
+  filter(!is.na(Si)) %>% 
   ggplot(aes(date,Si)) + 
   geom_path(aes(color=station))+
   geom_point(aes(color=station))+
@@ -144,7 +144,7 @@ Fig1b6<-envdata %>%
 ## Flow cytometric abundances
 #Heterotrophic bacteria
 Fig1b7<-envdata %>%  
-  filter(BA != "NA") %>% 
+  filter(!is.na(BA)) %>% 
   ggplot(aes(date, BA/1e5)) + 
   geom_path(aes(color=station))+
   geom_point(aes(color=station))+
@@ -158,7 +158,7 @@ Fig1b7<-envdata %>%
 
 #Synechococcus
 Fig1b8<-envdata %>%  
-  filter(synecho != "NA") %>% 
+  filter(!is.na(synecho)) %>% 
   ggplot(aes(date,synecho/1e5)) + 
   geom_path(aes(color=station))+
   geom_point(aes(color=station))+
@@ -172,7 +172,7 @@ Fig1b8<-envdata %>%
 
 #Phototrophic picoeukaryotes
 Fig1b9<-envdata %>%  
-  filter(peuk != "NA") %>% 
+  filter(!is.na(peuk)) %>% 
   ggplot(aes(date,peuk/1e4)) + 
   geom_path(aes(color=station))+
   geom_point(aes(color=station))+
